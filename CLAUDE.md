@@ -37,6 +37,12 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - To update it: run `npm run build`, then republish `dist/index.html` and `dist/assets/*` to that slug (remove the old hashed asset files).
 - Open a scene directly with a hash: `#cloister`, `#rooftop`, `#bridge`, `#cathedral`. Mouse look falls back to click-and-drag when pointer lock is blocked.
 
+## GitHub Pages
+
+- `.github/workflows/pages.yml` builds and deploys the game on every push to `main` (or by running it manually).
+- The planned URL is https://aadhavprabhu-max.github.io/Vulgshire/ (add `#bridge` and so on to pick a scene).
+- One-time setup by the repo owner: (1) Pages needs a **public** repo or a paid GitHub plan, and the repo is private right now; (2) Settings → Pages → Source: **GitHub Actions**; (3) get this work merged into `main`.
+
 ## Code layout
 
 - `src/main.js`: scene setup, lights, settings keys, main loop.
