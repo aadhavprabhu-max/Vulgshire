@@ -1,6 +1,6 @@
 # VULGSHIRE — project brief for Claude Code
 
-A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". The stack is chosen (see Decisions) but no game code exists yet. Milestone 1 (the moonlit cloister) is planned and waiting for approval.
+A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". Milestone 1 (the moonlit cloister) is built and waiting for the "yes, that's the vibe" sign-off.
 
 ## How to work with me
 
@@ -21,6 +21,29 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **World scale:** about 1/4 of the map's scale. The map's scale bar gives about 5.6 m per pixel, so the walled city measures roughly 6.3 x 4.7 km at full scale and roughly 1.6 x 1.2 km in game. The lake is roughly 3 x 2 km at full scale and roughly 0.8 x 0.5 km in game.
 - **Progress screenshots:** after each meaningful visual change, save a small 16:9 screenshot (about 640 px wide) to `screenshots/progress/` with a numbered, descriptive filename (for example `003-cloister-fog-pass.png`). Compare it with the matching reference image and note in one line what matches and what's off.
 - **Naming:** district and landmark names are provisional. Keep them in one data file, never hard-coded across the code.
+
+## Running it
+
+- `npm install` once, then `npm run dev` and open the printed URL.
+- Controls: click to lock the mouse and look around, **WASD** or arrow keys to move, **Shift** to run, **Q/E** to turn.
+- Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD. These are number keys because browsers reserve most F-keys.
+- URL flags: `?res=0|1|2&jitter=1&fog=0&dither=0&grade=0`, `&shot=1` (hides the HUD), `&pose=x,z,yaw,pitch` (debug camera pose).
+- Progress screenshots: `node tools/screenshot.mjs screenshots/progress/NNN-name.png ["query"]` renders headless at 640x360. It needs Playwright; in the cloud container it uses the preinstalled global copy.
+
+## Code layout
+
+- `src/main.js`: scene setup, lights, settings keys, main loop.
+- `src/retro/`: `RetroRenderer.js` (low-res target, nearest upscale, letterbox, dither, colour grade), `retroMaterial.js` (vertex jitter shader patch), `textures.js` (all procedural textures).
+- `src/scenes/cloister.js`: the cloister scene, its colliders and the sky and moon.
+- `src/player/`: `monk.js` (model, lantern, animation), `controller.js` (third-person camera, movement, collision).
+- `src/data/world.js`: world names, map positions and the three-rivers rule check (`validateWorld`).
+- `src/ui/hud.js`: the small iron-framed HUD.
+
+## Rendering notes (Milestone 1)
+
+- Lights: a navy hemisphere light, a cold directional moonlight with a hard 1024 px `BasicShadowMap`, and warm point lights for the lantern and wall torches.
+- Surfaces under the walkway roof use darker "baked" materials (`stoneShade`, `floorShade`) because the hemisphere light can't be occluded. This keeps the arches reading as dark openings, like in the reference.
+- Glowing flowers are unlit `MeshBasicMaterial` crossed quads (instanced).
 
 ## Notes on the references
 
