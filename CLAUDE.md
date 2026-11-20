@@ -31,6 +31,12 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - URL flags: `?res=0|1|2&jitter=1&fog=0&dither=0&grade=0`, `&shot=1` (hides the HUD), `&pose=x,z,yaw,pitch` (debug camera pose), `&view=first`.
 - Progress screenshots: `node tools/screenshot.mjs screenshots/progress/NNN-name.png ["query"]` renders headless at 640x360. It needs Playwright; in the cloud container it uses the preinstalled global copy.
 
+## Playable link
+
+- Hosted as a Claude artifact: https://claude.ai/artifact/7eSk5dX1oGP8d5963ZPjj7 (slug `35d1374a-e791-44e3-9aad-3ba1abca1962`). It's private to the owner until they share it from the artifact page.
+- To update it: run `npm run build`, then republish `dist/index.html` and `dist/assets/*` to that slug (remove the old hashed asset files).
+- Open a scene directly with a hash: `#cloister`, `#rooftop`, `#bridge`, `#cathedral`. Mouse look falls back to click-and-drag when pointer lock is blocked.
+
 ## Code layout
 
 - `src/main.js`: scene setup, lights, settings keys, main loop.

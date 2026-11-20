@@ -33,10 +33,18 @@ export class ThirdPersonController {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('click', () => {
-      if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+      if (document.pointerLockElement === canvas) return;
+      // Pointer lock may be refused (e.g. inside a sandboxed frame): drag-to-look still works.
+      try {
+        const p = canvas.requestPointerLock?.();
+        if (p && p.catch) p.catch(() => {});
+      } catch {
+        /* ignore */
+      }
     });
     window.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement !== canvas) return;
+      const locked = document.pointerLockElement === canvas;
+      if (!locked && !(e.buttons & 1)) return; // unlocked: look while the left button is held
       this.yaw -= e.movementX * 0.0024;
       const lim = this.firstPerson ? [-1.35, 1.35] : [-0.9, 0.55];
       this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * 0.002, lim[0], lim[1]);

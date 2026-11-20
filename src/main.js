@@ -30,7 +30,9 @@ scene.add(monk.root);
 const controller = new ThirdPersonController({ camera, character: monk, canvas, colliders: [], blockers: [], spawn: new THREE.Vector3() });
 
 let current = null; // { def, built }
-let sceneIndex = Math.max(0, SCENES.findIndex((s) => s.id === new URLSearchParams(location.search).get('scene')));
+// Start scene: ?scene=<id> or #<id> (the hash form works on the hosted link).
+const wantedScene = new URLSearchParams(location.search).get('scene') || location.hash.slice(1);
+let sceneIndex = Math.max(0, SCENES.findIndex((s) => s.id === wantedScene));
 
 function disposeTree(root) {
   root.traverse((o) => {
