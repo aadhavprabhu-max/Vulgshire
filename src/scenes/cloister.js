@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { tex, worldBoxUV, scaleUV } from '../retro/textures.js';
+import { tex, scaleUV } from '../retro/textures.js';
+import { lambert, archPoints, archHole, shadowy, box, gableRoof, spire, cross, lancet, rotY, makeTorch, crossedSprites, mulberry, buildSky, flickerTorches } from './kit.js';
 
 // The moonlit cloister (reference: reference/screenshots/01-moonlit-cloister.png).
 // A square garden ringed by a pointed-arch arcade and a covered walkway,
@@ -23,10 +24,6 @@ const SIDES = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 };
 
 export const MOON_DIR = new THREE.Vector3(0.62, 0.56, -0.62).normalize();
 
-function lambert(map, opts = {}) {
-  return new THREE.MeshLambertMaterial({ map, ...opts });
-}
-
 function mats() {
   return {
     stone: lambert(tex.stoneWall()),
@@ -45,78 +42,6 @@ function mats() {
     window: new THREE.MeshBasicMaterial({ map: tex.windowDark() }),
     iron: lambert(null, { color: 0x1e1c1c }),
   };
-}
-
-// Points along a pointed (two-centred) arch from (x0, ys) over the apex to (x1, ys).
-function archPoints(x0, x1, ys, k = 0.8, n = 7) {
-  const span = x1 - x0;
-  const r = span * k;
-  const mid = (x0 + x1) / 2;
-  const cL = x0 + r;
-  const cR = x1 - r;
-  const thA = Math.acos((mid - cL) / r);
-  const pts = [];
-  for (let i = 0; i <= n; i++) {
-    const a = Math.PI + ((thA - Math.PI) * i) / n;
-    pts.push([cL + r * Math.cos(a), ys + r * Math.sin(a)]);
-  }
-  for (let i = 1; i <= n; i++) {
-    const a = Math.PI - thA + ((0 - (Math.PI - thA)) * i) / n;
-    pts.push([cR + r * Math.cos(a), ys + r * Math.sin(a)]);
-  }
-  return pts;
-}
-
-function archHole(x0, x1, yBottom, ys, k) {
-  const p = new THREE.Path();
-  p.moveTo(x0, yBottom);
-  for (const [x, y] of archPoints(x0, x1, ys, k)) p.lineTo(x, y);
-  p.lineTo(x1, yBottom);
-  p.lineTo(x0, yBottom);
-  return p;
-}
-
-function shadowy(mesh, cast = true, receive = true) {
-  mesh.castShadow = cast;
-  mesh.receiveShadow = receive;
-  return mesh;
-}
-
-function box(w, h, d, mat, x, y, z, tile = 2) {
-  const m = new THREE.Mesh(worldBoxUV(new THREE.BoxGeometry(w, h, d), w, h, d, tile), mat);
-  m.position.set(x, y, z);
-  return shadowy(m);
-}
-
-// Gable roof prism running along X, centred on x, ridge at y + rise.
-function gableRoof(len, width, rise, mat, x, y, z) {
-  const s = new THREE.Shape();
-  s.moveTo(-width / 2 - 0.4, 0);
-  s.lineTo(width / 2 + 0.4, 0);
-  s.lineTo(0, rise);
-  s.lineTo(-width / 2 - 0.4, 0);
-  const g = scaleUV(new THREE.ExtrudeGeometry(s, { depth: len, bevelEnabled: false }), 0.5);
-  const m = shadowy(new THREE.Mesh(g, mat));
-  m.rotation.y = Math.PI / 2;
-  m.position.set(x - len / 2, y, z);
-  return m;
-}
-
-function spire(radius, height, mat, x, y, z, segments = 4) {
-  const g = new THREE.ConeGeometry(radius, height, segments, 1);
-  scaleUV(g, 3);
-  const m = shadowy(new THREE.Mesh(g, mat));
-  m.position.set(x, y + height / 2, z);
-  m.rotation.y = Math.PI / 4;
-  return m;
-}
-
-function cross(mat, x, y, z, s = 1) {
-  const g = new THREE.Group();
-  g.add(box(0.1 * s, 1.0 * s, 0.1 * s, mat, 0, 0.5 * s, 0));
-  g.add(box(0.55 * s, 0.1 * s, 0.1 * s, mat, 0, 0.68 * s, 0));
-  g.position.set(x, y, z);
-  return g;
 }
 
 // Pointed-arch arcade wall of length L with n bays (middle bay is a doorway).
@@ -182,7 +107,7 @@ function ribArch(mat) {
   return shadowy(new THREE.Mesh(g, mat));
 }
 
-export function buildCloister() {
+function buildCloister() {
   const M = mats();
   const root = new THREE.Group();
   root.name = 'cloister';
@@ -463,124 +388,28 @@ export function buildCloister() {
     torches.push(t);
   }
 
-  return { root, colliders, cameraBlockers, torches, spawn: new THREE.Vector3(0.2, 0, 4.4), spawnYaw: -0.5 };
-}
-
-// Flat pointed-arch window (dark glass), bottom-centred at the origin.
-function lancet(w, h, mat) {
-  const s = new THREE.Shape();
-  s.moveTo(-w / 2, 0);
-  for (const [x, y] of archPoints(-w / 2, w / 2, h - w * 0.75, 0.8)) s.lineTo(x, y);
-  s.lineTo(w / 2, 0);
-  s.lineTo(-w / 2, 0);
-  const g = new THREE.ShapeGeometry(s);
-  // Map UVs to the 0..1 window texture.
-  const uv = g.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + w / 2) / w, uv.getY(i) / h);
-  return new THREE.Mesh(g, mat);
-}
-
-function rotY(mesh, x, z) {
-  const g = new THREE.Group();
-  g.add(mesh);
-  g.rotation.y = Math.PI / 2;
-  g.position.set(x, 0, z);
-  return g;
-}
-
-function makeTorch(ironMat) {
-  const group = new THREE.Group();
-  const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.4), ironMat);
-  bracket.position.set(0, 0, 0.2);
-  group.add(bracket);
-  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.035, 0.55, 5), new THREE.MeshLambertMaterial({ color: 0x3a2a1a }));
-  stick.position.set(0, 0.2, 0.38);
-  stick.rotation.x = 0.25;
-  group.add(stick);
-  const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.flame(), color: 0xffffff, fog: true }));
-  flame.scale.set(0.28, 0.5, 1);
-  flame.position.set(0, 0.68, 0.45);
-  group.add(flame);
-  const light = new THREE.PointLight(0xff9a48, 3, 9, 2);
-  light.position.set(0, 0.7, 0.7);
-  group.add(light);
-  return { group, flame, light, base: 3, phase: Math.random() * 10 };
-}
-
-// Many small upright "crossed quad" sprites, one InstancedMesh per material.
-function crossedSprites(spots, material, minH, maxH, rnd) {
-  const a = new THREE.PlaneGeometry(1, 1);
-  a.translate(0, 0.5, 0);
-  const b = a.clone();
-  b.rotateY(Math.PI / 2);
-  const geo = mergeGeos([a, b]);
-  const mesh = new THREE.InstancedMesh(geo, material, spots.length);
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const s = new THREE.Vector3();
-  const p = new THREE.Vector3();
-  spots.forEach(([x, z], i) => {
-    const h = minH + rnd() * (maxH - minH);
-    s.set(h * 0.6, h, h * 0.6);
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI);
-    p.set(x, 0.05, z);
-    m.compose(p, q, s);
-    mesh.setMatrixAt(i, m);
-  });
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-function mergeGeos(geos) {
-  const pos = [];
-  const uv = [];
-  const nor = [];
-  const idx = [];
-  let off = 0;
-  for (const g of geos) {
-    pos.push(...g.attributes.position.array);
-    uv.push(...g.attributes.uv.array);
-    nor.push(...g.attributes.normal.array);
-    for (const i of g.index.array) idx.push(i + off);
-    off += g.attributes.position.count;
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  out.setIndex(idx);
-  return out;
-}
-
-function mulberry(seed) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  return {
+    root,
+    sky: buildSky({ preset: 'night', moonDir: MOON_DIR, moonSize: 34 }),
+    colliders,
+    cameraBlockers,
+    spawn: new THREE.Vector3(0.2, 0, 4.4),
+    spawnYaw: -0.5,
+    spawnPitch: 0.22,
+    env: {
+      fog: { color: 0x101836, density: 0.028 },
+      hemi: { sky: 0x5466a8, ground: 0x14141f, intensity: 2.3 },
+      dir: { dir: MOON_DIR, color: 0xbfd0ff, intensity: 2.6, shadow: true, extent: 26 },
+    },
+    update(dt, t) {
+      flickerTorches(torches, t);
+    },
   };
 }
 
-// Sky dome + moon + halo, unaffected by fog.
-export function buildSky() {
-  const g = new THREE.Group();
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(400, 24, 12),
-    new THREE.MeshBasicMaterial({ map: tex.sky(), side: THREE.BackSide, fog: false, depthWrite: false }),
-  );
-  dome.renderOrder = -10;
-  g.add(dome);
-  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.moon(), fog: false, depthWrite: false }));
-  moon.position.copy(MOON_DIR).multiplyScalar(300);
-  moon.scale.set(34, 34, 1);
-  moon.renderOrder = -9;
-  g.add(moon);
-  const halo = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: tex.halo(), fog: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.55 }),
-  );
-  halo.position.copy(MOON_DIR).multiplyScalar(310);
-  halo.scale.set(110, 110, 1);
-  halo.renderOrder = -9;
-  g.add(halo);
-  return g;
-}
+export default {
+  id: 'cloister',
+  title: 'The Moonlit Cloister',
+  reference: '01-moonlit-cloister.png',
+  build: buildCloister,
+};

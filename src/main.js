@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { settings, loadSettingsFromURL, RES_PRESETS } from './settings.js';
 import { RetroRenderer } from './retro/RetroRenderer.js';
 import { retroUniforms, patchSceneMaterials, refreshSceneMaterials } from './retro/retroMaterial.js';
-import { buildCloister, buildSky, MOON_DIR } from './scenes/cloister.js';
+import { SCENES } from './scenes/index.js';
 import { createMonk } from './player/monk.js';
 import { ThirdPersonController } from './player/controller.js';
 import { createHud } from './ui/hud.js';
@@ -14,59 +14,86 @@ loadSettingsFromURL();
 const canvas = document.getElementById('game');
 const retro = new RetroRenderer(canvas, settings);
 const hud = createHud(document.getElementById('hud'), settings.shot);
-
-// ---- Scene ---------------------------------------------------------------
-const scene = new THREE.Scene();
-const FOG_COLOR = 0x101836;
-const fog = new THREE.FogExp2(FOG_COLOR, 0.028);
-scene.fog = settings.fog ? fog : null;
-scene.background = new THREE.Color(FOG_COLOR);
-
 const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 1000);
 
-// Cold moonlight + navy ambient; warm light comes only from flames.
-scene.add(new THREE.HemisphereLight(0x5466a8, 0x14141f, 2.3));
-const moonLight = new THREE.DirectionalLight(0xbfd0ff, 2.6);
-moonLight.position.copy(MOON_DIR).multiplyScalar(60);
-moonLight.castShadow = true;
-moonLight.shadow.mapSize.set(1024, 1024);
-Object.assign(moonLight.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 140 });
-moonLight.shadow.bias = -0.0008;
-moonLight.shadow.normalBias = 0.03;
-scene.add(moonLight);
-scene.add(moonLight.target);
-
-const sky = buildSky();
-scene.add(sky);
-const cloister = buildCloister();
-scene.add(cloister.root);
+const scene = new THREE.Scene();
+const fog = new THREE.FogExp2(0x000000, 0.02);
+const hemi = new THREE.HemisphereLight();
+const dirLight = new THREE.DirectionalLight();
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.bias = -0.0008;
+dirLight.shadow.normalBias = 0.03;
+scene.add(hemi, dirLight, dirLight.target);
 
 const monk = createMonk();
 scene.add(monk.root);
+const controller = new ThirdPersonController({ camera, character: monk, canvas, colliders: [], blockers: [], spawn: new THREE.Vector3() });
 
-const controller = new ThirdPersonController({
-  camera,
-  character: monk,
-  canvas,
-  colliders: cloister.colliders,
-  blockers: cloister.cameraBlockers,
-  spawn: cloister.spawn,
-  yaw: cloister.spawnYaw,
-});
+let current = null; // { def, built }
+let sceneIndex = Math.max(0, SCENES.findIndex((s) => s.id === new URLSearchParams(location.search).get('scene')));
+
+function disposeTree(root) {
+  root.traverse((o) => {
+    o.geometry?.dispose();
+    // Materials and textures are shared/cached and stay alive.
+  });
+}
+
+function loadScene(index) {
+  if (current) {
+    scene.remove(current.built.root, current.built.sky);
+    disposeTree(current.built.root);
+  }
+  const def = SCENES[index];
+  const built = def.build();
+  current = { def, built };
+  scene.add(built.root);
+  if (built.sky) scene.add(built.sky);
+
+  const env = built.env;
+  fog.color.set(env.fog.color);
+  fog.density = env.fog.density;
+  scene.fog = settings.fog ? fog : null;
+  scene.background = new THREE.Color(env.fog.color);
+  hemi.color.set(env.hemi.sky);
+  hemi.groundColor.set(env.hemi.ground);
+  hemi.intensity = env.hemi.intensity;
+  dirLight.color.set(env.dir.color);
+  dirLight.intensity = env.dir.intensity;
+  dirLight.position.copy(env.dir.dir).multiplyScalar(60);
+  dirLight.castShadow = !!env.dir.shadow;
+  const e = env.dir.extent || 26;
+  Object.assign(dirLight.shadow.camera, { left: -e, right: e, top: e, bottom: -e, near: 1, far: 160 });
+  dirLight.shadow.camera.updateProjectionMatrix();
+  if (env.dir.target) dirLight.target.position.copy(env.dir.target);
+  else dirLight.target.position.set(0, 0, 0);
+  dirLight.position.add(dirLight.target.position);
+
+  controller.colliders = built.colliders;
+  controller.blockers = built.cameraBlockers;
+  controller.pos.copy(built.spawn);
+  controller.yaw = controller.facing = built.spawnYaw;
+  controller.pitch = built.spawnPitch ?? 0.1;
+  monk.state.baseIntensity = built.lanternIntensity ?? 4;
+
+  patchSceneMaterials(scene);
+  refreshSceneMaterials(scene);
+  hud.setScene?.(def.title);
+}
+
+loadScene(sceneIndex);
 
 // Debug/screenshot pose: ?pose=x,z,yaw,pitch
 const poseParam = new URLSearchParams(location.search).get('pose');
 if (poseParam) {
   const [x, z, yaw, pitch] = poseParam.split(',').map(Number);
-  controller.pos.set(x, 0, z);
+  controller.pos.set(x, current.built.spawn.y, z);
   controller.yaw = controller.facing = yaw;
   if (!Number.isNaN(pitch)) controller.pitch = pitch;
 }
-
-patchSceneMaterials(scene);
 retroUniforms.uJitter.value = settings.jitter ? 1 : 0;
 
-// ---- Settings keys (number keys: browsers reserve most F-keys) ------------
+// ---- Keys (number keys: browsers reserve most F-keys) ----------------------
 window.addEventListener('keydown', (e) => {
   switch (e.code) {
     case 'Digit1':
@@ -93,6 +120,12 @@ window.addEventListener('keydown', (e) => {
       settings.grade = !settings.grade;
       hud.toast(`Colour grade: ${settings.grade ? 'on' : 'off'}`);
       break;
+    case 'BracketRight':
+    case 'BracketLeft':
+      sceneIndex = (sceneIndex + (e.code === 'BracketRight' ? 1 : SCENES.length - 1)) % SCENES.length;
+      loadScene(sceneIndex);
+      hud.toast(`Scene: ${SCENES[sceneIndex].title}`);
+      break;
     case 'KeyH':
       hud.toggle();
       break;
@@ -105,14 +138,10 @@ let frames = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
+  current.built.update?.(dt, t, { controller, camera });
   controller.update(dt);
   monk.update(dt, t, controller.speed);
-  for (const torch of cloister.torches) {
-    const f = 0.8 + 0.12 * Math.sin(t * 9.1 + torch.phase) + 0.08 * Math.sin(t * 17.3 + torch.phase * 2);
-    torch.light.intensity = torch.base * f;
-    torch.flame.scale.set(0.26 + 0.03 * Math.sin(t * 13 + torch.phase), 0.46 + 0.07 * f, 1);
-  }
-  sky.position.set(camera.position.x, 0, camera.position.z); // sky follows the camera
+  if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   retro.render(scene, camera);
   if (++frames === 10) window.__vulgshire = { ready: true, controller, settings };
   requestAnimationFrame(frame);
