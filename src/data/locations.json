@@ -1,0 +1,97 @@
+{
+  "_note": "Places pinned on reference/maps/vulgshire-topdown-FINAL.png (pixel coords, 1536x1024). status: 'map' = read off the final map, 'proposal' = not decided yet. Rendered by tools/annotate_map.py into docs/map-locations.png.",
+  "mapImage": "reference/maps/vulgshire-topdown-FINAL.png",
+  "metresPerPixel": 5.6,
+  "gameScale": 0.25,
+  "places": [
+    {
+      "id": "bridge",
+      "name": "Bridge to the Crownkeep",
+      "scene": "bridge",
+      "reference": "03-burning-castle-bridge.png",
+      "mapPx": [
+        665,
+        167
+      ],
+      "status": "map",
+      "note": "Stone bridge over the north river, west of the Crownkeep. Walkable zone.",
+      "label": "left"
+    },
+    {
+      "id": "crownkeep",
+      "name": "The Crownkeep",
+      "scene": null,
+      "mapPx": [
+        820,
+        168
+      ],
+      "status": "map",
+      "note": "Royal fortress on high ground. Seen from the bridge zone; its gate is closed for now."
+    },
+    {
+      "id": "cathedral",
+      "name": "The Great Cathedral (interior)",
+      "scene": "cathedral",
+      "reference": "04-cathedral-interior.png",
+      "mapPx": [
+        945,
+        262
+      ],
+      "status": "map",
+      "note": "Interior seen from the west gallery."
+    },
+    {
+      "id": "cathedral-square",
+      "name": "Cathedral square",
+      "scene": null,
+      "mapPx": [
+        920,
+        330
+      ],
+      "status": "map",
+      "note": "Open square with a round fountain between the cathedral and the lake. Good next zone."
+    },
+    {
+      "id": "cloister",
+      "name": "Moonlit cloister",
+      "scene": "cloister",
+      "reference": "01-moonlit-cloister.png",
+      "mapPx": [
+        990,
+        215
+      ],
+      "status": "proposal",
+      "note": "Proposal: the cathedral's cloister, on its north-east side."
+    },
+    {
+      "id": "rooftop",
+      "name": "Alchemist's tower",
+      "scene": "rooftop",
+      "reference": "02-alchemist-rooftop.png",
+      "mapPx": [
+        505,
+        627
+      ],
+      "status": "proposal",
+      "note": "Proposal: a tower in the Old Town looking across the lake."
+    }
+  ],
+  "zones": [
+    {
+      "id": "north-river-crossing",
+      "name": "North River Crossing",
+      "scene": "bridge",
+      "originPx": [
+        665,
+        167
+      ],
+      "rectPx": [
+        558,
+        110,
+        736,
+        228
+      ],
+      "note": "Walkable zone. Game coords: x = east, z = south, 1 map px = 1.4 m, origin at the bridge centre."
+    }
+  ]
+}
