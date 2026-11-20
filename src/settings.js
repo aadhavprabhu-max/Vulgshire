@@ -1,5 +1,6 @@
 // Runtime settings. All toggles can also be set from the URL,
 // e.g. ?res=1&jitter=1&fog=0&dither=0&grade=0&shot=1
+// Also read in main.js: ?scene=<id>, ?pose=x,z,yaw,pitch, ?view=first
 export const RES_PRESETS = [
   { label: '640×360', w: 640, h: 360 },
   { label: '854×480', w: 854, h: 480 },

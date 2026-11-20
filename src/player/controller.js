@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 
-// Third-person, over-the-shoulder controller.
+// Third-person (over the shoulder) or first-person controller.
 // WASD / arrows move relative to the camera, Shift runs, mouse looks (click to
-// lock the pointer), Q/E turn without a mouse. Collision is circle-vs-box in XZ.
+// lock the pointer), Q/E turn without a mouse, V toggles first person.
+// Collision is circle-vs-box in XZ: axis-aligned boxes {minX,maxX,minZ,maxZ}
+// or rotated boxes {cx,cz,hx,hz,rot}.
 
 const WALK_SPEED = 2.0;
 const RUN_SPEED = 4.2;
@@ -10,6 +12,7 @@ const RADIUS = 0.34;
 const SHOULDER = new THREE.Vector3(1.1, 0.0, 0); // camera sits right of the monk
 const DISTANCE = 3.9;
 const HEAD_HEIGHT = 1.8;
+const EYE_HEIGHT = 1.62;
 
 export class ThirdPersonController {
   constructor({ camera, character, canvas, colliders, blockers, spawn, yaw = 0 }) {
@@ -23,6 +26,7 @@ export class ThirdPersonController {
     this.facing = yaw;
     this.speed = 0;
     this.keys = new Set();
+    this.firstPerson = false;
     this.raycaster = new THREE.Raycaster();
 
     window.addEventListener('keydown', (e) => this.keys.add(e.code));
@@ -34,8 +38,16 @@ export class ThirdPersonController {
     window.addEventListener('mousemove', (e) => {
       if (document.pointerLockElement !== canvas) return;
       this.yaw -= e.movementX * 0.0024;
-      this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * 0.002, -0.9, 0.55);
+      const lim = this.firstPerson ? [-1.35, 1.35] : [-0.9, 0.55];
+      this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * 0.002, lim[0], lim[1]);
     });
+  }
+
+  setFirstPerson(on) {
+    this.firstPerson = on;
+    this.character.setFirstPerson?.(on);
+    if (on) this.facing = this.yaw;
+    else this.pitch = THREE.MathUtils.clamp(this.pitch, -0.9, 0.55);
   }
 
   update(dt) {
@@ -65,12 +77,13 @@ export class ThirdPersonController {
       const dz = -ix * sin + iz * cos;
       this.pos.x += dx * this.speed * dt;
       this.pos.z += dz * this.speed * dt;
-      // Turn the monk toward the movement direction.
-      const want = Math.atan2(-dx, -dz);
+      // Turn the monk toward the movement direction (first person: face the view).
+      const want = this.firstPerson ? this.yaw : Math.atan2(-dx, -dz);
       let diff = want - this.facing;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       this.facing += diff * Math.min(1, dt * 10);
     }
+    if (this.firstPerson) this.facing = this.yaw;
     this.collide();
 
     this.character.root.position.copy(this.pos);
@@ -82,6 +95,10 @@ export class ThirdPersonController {
     const p = this.pos;
     for (let iter = 0; iter < 3; iter++) {
       for (const b of this.colliders) {
+        if (b.rot !== undefined) {
+          this.collideOBB(p, b);
+          continue;
+        }
         const cx = Math.max(b.minX, Math.min(p.x, b.maxX));
         const cz = Math.max(b.minZ, Math.min(p.z, b.maxZ));
         let dx = p.x - cx;
@@ -108,7 +125,55 @@ export class ThirdPersonController {
     }
   }
 
+  pointInCollider(x, z, b, pad = 0) {
+    if (b.rot === undefined) return x > b.minX - pad && x < b.maxX + pad && z > b.minZ - pad && z < b.maxZ + pad;
+    const c = Math.cos(b.rot);
+    const s = Math.sin(b.rot);
+    const dx = x - b.cx;
+    const dz = z - b.cz;
+    return Math.abs(dx * c - dz * s) < b.hx + pad && Math.abs(dx * s + dz * c) < b.hz + pad;
+  }
+
+  // Circle vs rotated box: work in the box's local frame.
+  collideOBB(p, b) {
+    const c = Math.cos(b.rot);
+    const s = Math.sin(b.rot);
+    const dx = p.x - b.cx;
+    const dz = p.z - b.cz;
+    const lx = dx * c - dz * s;
+    const lz = dx * s + dz * c;
+    const qx = Math.max(-b.hx, Math.min(lx, b.hx));
+    const qz = Math.max(-b.hz, Math.min(lz, b.hz));
+    let ox = lx - qx;
+    let oz = lz - qz;
+    const d2 = ox * ox + oz * oz;
+    if (d2 >= RADIUS * RADIUS) return;
+    let nlx = lx;
+    let nlz = lz;
+    if (d2 > 1e-9) {
+      const d = Math.sqrt(d2);
+      nlx = qx + (ox / d) * RADIUS;
+      nlz = qz + (oz / d) * RADIUS;
+    } else {
+      const pushes = [
+        [b.hx + RADIUS - lx, 0],
+        [-b.hx - RADIUS - lx, 0],
+        [0, b.hz + RADIUS - lz],
+        [0, -b.hz - RADIUS - lz],
+      ].sort((a, e) => Math.abs(a[0] + a[1]) - Math.abs(e[0] + e[1]));
+      nlx = lx + pushes[0][0];
+      nlz = lz + pushes[0][1];
+    }
+    p.x = b.cx + nlx * c + nlz * s;
+    p.z = b.cz - nlx * s + nlz * c;
+  }
+
   updateCamera() {
+    if (this.firstPerson) {
+      this.camera.position.set(this.pos.x, this.pos.y + EYE_HEIGHT, this.pos.z);
+      this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+      return;
+    }
     const head = new THREE.Vector3(this.pos.x, this.pos.y + HEAD_HEIGHT, this.pos.z);
     const rot = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
     const shoulder = SHOULDER.clone().applyEuler(new THREE.Euler(0, this.yaw, 0));
@@ -120,6 +185,16 @@ export class ThirdPersonController {
     this.raycaster.far = DISTANCE;
     const hit = this.raycaster.intersectObjects(this.blockers, false)[0];
     if (hit) dist = Math.max(0.4, hit.distance - 0.25);
+    // Also stop at walls described only by colliders (merged town buildings).
+    for (let s = 0.3; s < dist; s += 0.2) {
+      const x = pivot.x + back.x * s;
+      const y = pivot.y + back.y * s;
+      const z = pivot.z + back.z * s;
+      if (this.colliders.some((b) => y < (b.h ?? Infinity) && this.pointInCollider(x, z, b, 0.25))) {
+        dist = Math.max(0.4, s - 0.3);
+        break;
+      }
+    }
     this.camera.position.copy(pivot).addScaledVector(back, dist);
     this.camera.quaternion.setFromEuler(rot);
   }

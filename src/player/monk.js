@@ -141,5 +141,13 @@ export function createMonk() {
     light.intensity = state.baseIntensity * f;
   }
 
-  return { root, update, light, state };
+  // First person: hide the body meshes but keep the lantern light burning
+  // (an invisible parent would switch the light off too).
+  function setFirstPerson(on) {
+    root.traverse((o) => {
+      if (o.isMesh) o.visible = !on;
+    });
+  }
+
+  return { root, update, light, state, setFirstPerson };
 }

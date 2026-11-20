@@ -91,6 +91,7 @@ if (poseParam) {
   controller.yaw = controller.facing = yaw;
   if (!Number.isNaN(pitch)) controller.pitch = pitch;
 }
+if (new URLSearchParams(location.search).get('view') === 'first') controller.setFirstPerson(true);
 retroUniforms.uJitter.value = settings.jitter ? 1 : 0;
 
 // ---- Keys (number keys: browsers reserve most F-keys) ----------------------
@@ -125,6 +126,10 @@ window.addEventListener('keydown', (e) => {
       sceneIndex = (sceneIndex + (e.code === 'BracketRight' ? 1 : SCENES.length - 1)) % SCENES.length;
       loadScene(sceneIndex);
       hud.toast(`Scene: ${SCENES[sceneIndex].title}`);
+      break;
+    case 'KeyV':
+      controller.setFirstPerson(!controller.firstPerson);
+      hud.toast(`View: ${controller.firstPerson ? 'first person' : 'third person'}`);
       break;
     case 'KeyH':
       hud.toggle();
