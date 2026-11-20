@@ -1,3 +1,5 @@
+import LOCATIONS from './locations.json';
+
 // Vulgshire world definition. Single source for names and map placement.
 // Names are PROVISIONAL: rename here, never hard-code them elsewhere.
 // Positions are pixel coordinates on reference/maps/vulgshire-topdown-FINAL.png (1536×1024).
@@ -38,6 +40,15 @@ export const WORLD = {
     { id: 'ashenwood', name: 'Ashenwood Forest', kind: 'forest', mapPx: [1240, 125] },
   ],
 };
+
+// Pinned scene locations and walkable zones (see docs/map-locations.png).
+export { LOCATIONS };
+
+// Map pixel -> game metres for a zone (x = east, z = south).
+export function mapToZone(zone, [px, py]) {
+  const k = LOCATIONS.metresPerPixel * LOCATIONS.gameScale;
+  return { x: (px - zone.originPx[0]) * k, z: (py - zone.originPx[1]) * k };
+}
 
 export function validateWorld(world = WORLD) {
   const errors = [];
