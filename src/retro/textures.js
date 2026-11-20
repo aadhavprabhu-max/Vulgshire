@@ -480,6 +480,31 @@ export const tex = {
       const r = rng(107);
       return toTexture(paint(16, 16, (x, y) => (x % 8 === 4 && y % 8 === 4 ? [120, 116, 110] : shade([46, 46, 52], 0.8 + r() * 0.4))));
     }),
+  // Neutral plaster, tinted per building with vertex colours.
+  plasterPlain: () =>
+    cached('plasterPlain', () => {
+      const r = rng(113);
+      const streaks = Array.from({ length: 64 }, () => (r() < 0.12 ? 0.9 : 1));
+      return toTexture(paint(64, 64, (x, y) => {
+        let k = (0.9 + r() * 0.14) * (y > 20 ? streaks[x] : 1); // rain streaks
+        if (y % 32 === 0) k *= 0.82; // faint storey line
+        return shade([206, 200, 188], k);
+      }));
+    }),
+  awning: () =>
+    cached('awning', () => toTexture(paint(16, 16, (x, y) => shade(x % 8 < 4 ? [232, 228, 220] : [150, 146, 140], y === 15 ? 0.6 : 1)))),
+  door: () =>
+    cached('door', () => {
+      const r = rng(127);
+      return toTexture(
+        paint(8, 16, (x, y) => {
+          if (x === 0 || x === 7 || y === 0) return [30, 24, 20, 255];
+          if (y === 5 || y === 11) return [40, 36, 34, 255]; // iron bands
+          return shade([78, 54, 36], (x % 2 ? 0.85 : 1) * (0.9 + r() * 0.2)).concat(255);
+        }),
+        { repeat: false },
+      );
+    }),
   // Light shaft: bright core fading to the edges and toward the floor end.
   shaft: () =>
     cached('shaft', () =>

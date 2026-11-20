@@ -1,109 +1,182 @@
 import * as THREE from 'three';
-import { tex } from '../retro/textures.js';
-import { boxGeo, gableGeo, quadGeo, mergedMesh, mulberry } from './kit.js';
+import { BuildingSet, ARCHETYPES } from './buildings.js';
+import { mulberry } from './kit.js';
 
-// Procedural medieval town: half-timbered houses with gable roofs, rows of
-// small windows (some lit amber), and the occasional church tower with a spire.
-// Everything is merged into a handful of meshes so hundreds of houses stay cheap.
+// Town layout helpers built on BuildingSet (varied buildings).
+//  - buildTown(): random scatter for distant skylines (no colliders needed).
+//  - Streets + lotsAlongStreets(): walkable districts where houses line the streets.
 
-const shared = {};
-function materials() {
-  if (shared.walls) return shared;
-  shared.walls = [0, 1, 2].map((v) => new THREE.MeshLambertMaterial({ map: tex.plaster(v) }));
-  shared.stone = new THREE.MeshLambertMaterial({ map: tex.darkStone() });
-  shared.roof = new THREE.MeshLambertMaterial({ map: tex.roofTile() });
-  shared.slate = new THREE.MeshLambertMaterial({ map: tex.slate() });
-  shared.lit = new THREE.MeshBasicMaterial({ map: tex.litWindow() });
-  shared.dark = new THREE.MeshBasicMaterial({ map: tex.windowDark() });
-  return shared;
-}
+const pickType = (rnd, churchChance, towerBias = 0) => {
+  const r = rnd();
+  if (r < churchChance) return 'church';
+  if (r < churchChance + towerBias) return 'tower';
+  return ARCHETYPES[Math.floor(rnd() * ARCHETYPES.length)];
+};
 
-/**
- * @param {object} o
- * @param {number} o.seed
- * @param {number} o.count       target number of houses
- * @param {number[]} o.bounds    [x0, x1, z0, z1]
- * @param {(x:number,z:number)=>number} o.groundY
- * @param {(x:number,z:number,r:number)=>boolean} [o.avoid]  return true to skip a spot
- */
-export function buildTown({ seed, count, bounds, groundY, avoid = () => false, minH = 6, maxH = 12, minW = 4, maxW = 8, litChance = 0.3, spireChance = 0.05, gridAngle = 0 }) {
-  const M = materials();
+/** Scatter varied houses in a rectangle (skylines, distant districts). */
+export function buildTown({ seed, count, bounds, groundY = () => 0, avoid = () => false, minW = 5, maxW = 9, litChance = 0.32, spireChance = 0.05, towerBias = 0.06, collide = false }) {
   const rnd = mulberry(seed);
+  const set = new BuildingSet(seed + 1, { litChance });
   const [x0, x1, z0, z1] = bounds;
-  const walls = [[], [], []];
-  const stone = [];
-  const roofs = [];
-  const slate = [];
-  const lit = [];
-  const dark = [];
   const placed = [];
-
-  const addWindows = (cx, cz, w, d, baseY, h, rot, litP) => {
-    // Windows on all four faces, one row per ~3 m storey.
-    const floors = Math.max(1, Math.floor((h - 1) / 3));
-    const faces = [
-      [0, d / 2, w, 0],
-      [Math.PI, d / 2, w, 0],
-      [Math.PI / 2, w / 2, d, 0],
-      [-Math.PI / 2, w / 2, d, 0],
-    ];
-    for (const [fa, off, span] of faces) {
-      const n = Math.max(1, Math.floor(span / 2.2));
-      for (let f = 0; f < floors; f++) {
-        for (let i = 0; i < n; i++) {
-          if (rnd() < 0.25) continue;
-          const u = -span / 2 + (span / n) * (i + 0.5);
-          const y = baseY + 1.8 + f * 3;
-          // Local face position, then rotate by the house angle + face angle.
-          const a = rot + fa;
-          const px = cx + Math.sin(a) * (off + 0.03) + Math.cos(a) * u;
-          const pz = cz + Math.cos(a) * (off + 0.03) - Math.sin(a) * u;
-          (rnd() < litP ? lit : dark).push(quadGeo(0.6, 0.9, px, y, pz, a));
-        }
-      }
-    }
-  };
-
   let tries = 0;
   let made = 0;
   while (made < count && tries < count * 12) {
     tries++;
+    const type = pickType(rnd, spireChance, towerBias);
+    const big = type === 'church';
+    const w = big ? 14 + rnd() * 4 : type === 'tower' ? 5 + rnd() * 1.5 : minW + rnd() * (maxW - minW);
+    const d = big ? 18 + rnd() * 4 : type === 'tower' ? w : minW + rnd() * (maxW - minW);
     const x = x0 + rnd() * (x1 - x0);
     const z = z0 + rnd() * (z1 - z0);
-    const isSpire = rnd() < spireChance;
-    const w = isSpire ? 5 + rnd() * 2 : minW + rnd() * (maxW - minW);
-    const d = isSpire ? w : minW + rnd() * (maxW - minW);
-    const r = Math.max(w, d) * 0.62;
+    const r = Math.max(w, d) * 0.6;
     if (avoid(x, z, r)) continue;
     if (placed.some(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 < (pr + r) ** 2)) continue;
     placed.push([x, z, r]);
     made++;
-    const gy = groundY(x, z);
-    const rot = gridAngle + (rnd() - 0.5) * 0.5 + (rnd() < 0.5 ? 0 : Math.PI / 2);
-    if (isSpire) {
-      const h = maxH * 1.8 + rnd() * maxH * 1.4;
-      stone.push(boxGeo(w, h, d, x, gy + h / 2, z, rot));
-      const sp = new THREE.ConeGeometry(w * 0.72, h * 0.55, 4, 1);
-      sp.rotateY(Math.PI / 4 + rot);
-      sp.translate(x, gy + h + h * 0.275, z);
-      slate.push(sp);
-      addWindows(x, z, w, d, gy + h - 6, 5, rot, 0.5);
-      continue;
-    }
-    const h = minH + rnd() * (maxH - minH);
-    walls[Math.floor(rnd() * 3)].push(boxGeo(w, h, d, x, gy + h / 2, z, rot));
-    const rise = 2 + rnd() * 2.5;
-    (rnd() < 0.75 ? roofs : slate).push(gableGeo(w, d, rise, x, gy + h, z, rot, 0.35));
-    addWindows(x, z, w, d, gy, h, rot, litChance);
+    set.add({ x, z, y: groundY(x, z), rot: (rnd() < 0.5 ? 0 : Math.PI / 2) + (rnd() - 0.5) * 0.5, w, d, type, collide });
   }
+  const built = set.build();
+  return collide ? built : built.group;
+}
 
-  const g = new THREE.Group();
-  g.name = 'town';
-  walls.forEach((list, i) => list.length && g.add(mergedMesh(list, M.walls[i])));
-  if (stone.length) g.add(mergedMesh(stone, M.stone));
-  if (roofs.length) g.add(mergedMesh(roofs, M.roof));
-  if (slate.length) g.add(mergedMesh(slate, M.slate));
-  if (lit.length) g.add(mergedMesh(lit, M.lit));
-  if (dark.length) g.add(mergedMesh(dark, M.dark));
+// ---- Streets ---------------------------------------------------------------
+
+/** A street: polyline of [x, z] points with a half-width. */
+export function street(points, halfWidth) {
+  const segs = [];
+  for (let i = 0; i < points.length - 1; i++) segs.push([points[i], points[i + 1]]);
+  return { points, halfWidth, segs };
+}
+
+function distToSeg(px, pz, [ax, az], [bx, bz]) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1)));
+  return Math.hypot(px - ax - dx * t, pz - az - dz * t);
+}
+
+export function distToStreet(px, pz, s) {
+  let d = Infinity;
+  for (const [a, b] of s.segs) d = Math.min(d, distToSeg(px, pz, a, b));
+  return d;
+}
+
+// Oriented-rectangle overlap (separating axis test) for lots.
+function corners(l, pad = 0) {
+  const c = Math.cos(l.rot);
+  const s = Math.sin(l.rot);
+  const hx = l.w / 2 + pad;
+  const hz = l.d / 2 + pad;
+  return [
+    [-hx, -hz],
+    [hx, -hz],
+    [hx, hz],
+    [-hx, hz],
+  ].map(([x, z]) => [l.x + x * c + z * s, l.z - x * s + z * c]);
+}
+function overlaps(a, b) {
+  const A = corners(a, 0.1);
+  const B = corners(b, 0.1);
+  for (const poly of [A, B]) {
+    for (let i = 0; i < 4; i++) {
+      const [x1, z1] = poly[i];
+      const [x2, z2] = poly[(i + 1) % 4];
+      const nx = z2 - z1;
+      const nz = x1 - x2;
+      const proj = (P) => P.map(([x, z]) => x * nx + z * nz);
+      const pa = proj(A);
+      const pb = proj(B);
+      if (Math.max(...pa) < Math.min(...pb) || Math.max(...pb) < Math.min(...pa)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Line both sides of each street with varied buildings facing it, then infill
+ * the blocks behind. `blocked(x, z, r)` marks areas that must stay free
+ * (river, squares, the bridge, outside the district...).
+ */
+export function lotsAlongStreets({ seed, streets, blocked = () => false, infillBounds = null, infillCount = 0, churchChance = 0.03, towerBias = 0.08 }) {
+  const rnd = mulberry(seed);
+  const lots = [];
+  const clearOfStreets = (lot) =>
+    corners(lot).concat([[lot.x, lot.z]]).every(([cx, cz]) => streets.every((s) => distToStreet(cx, cz, s) > s.halfWidth + 0.3));
+  const tryLot = (lot) => {
+    if (blocked(lot.x, lot.z, Math.max(lot.w, lot.d) * 0.55)) return false;
+    if (corners(lot).some(([cx, cz]) => blocked(cx, cz, 0))) return false;
+    if (!clearOfStreets(lot)) return false;
+    if (lots.some((o) => overlaps(o, lot))) return false;
+    lots.push(lot);
+    return true;
+  };
+
+  for (const s of streets) {
+    for (const [[ax, az], [bx, bz]] of s.segs) {
+      const len = Math.hypot(bx - ax, bz - az);
+      const ux = (bx - ax) / len;
+      const uz = (bz - az) / len;
+      for (const side of [-1, 1]) {
+        const nx = -uz * side;
+        const nz = ux * side;
+        let t = rnd() * 2;
+        while (t < len) {
+          const type = pickType(rnd, churchChance, towerBias);
+          const w = type === 'church' ? 14 : type === 'tower' ? 5.5 : 5.5 + rnd() * 4.5;
+          const d = type === 'church' ? 20 : type === 'tower' ? 5.5 : 7 + rnd() * 5;
+          const setback = s.halfWidth + d / 2 + 0.4 + rnd() * 0.5;
+          const cx = ax + ux * (t + w / 2) + nx * setback;
+          const cz = az + uz * (t + w / 2) + nz * setback;
+          // Front (+z local) faces the street: rotate local +z onto -n.
+          const rot = Math.atan2(-nx, -nz);
+          const ok = tryLot({ x: cx, z: cz, w, d, rot, type });
+          t += ok ? w + 0.05 : 2.5;
+        }
+      }
+    }
+  }
+  if (infillBounds) {
+    const [x0, x1, z0, z1] = infillBounds;
+    for (let i = 0; i < infillCount * 6 && i < 100000; i++) {
+      const w = 6 + rnd() * 5;
+      const d = 6 + rnd() * 6;
+      tryLot({ x: x0 + rnd() * (x1 - x0), z: z0 + rnd() * (z1 - z0), w, d, rot: rnd() * Math.PI, type: pickType(rnd, 0, towerBias) });
+      if (lots.length > infillCount * 4) break;
+    }
+  }
+  return lots;
+}
+
+/** Build a list of lots into merged meshes + colliders. */
+export function buildLots(lots, seed, opts = {}) {
+  const set = new BuildingSet(seed, opts);
+  for (const l of lots) set.add(l);
+  return set.build();
+}
+
+// Flat street surface following a polyline (for paving strips).
+export function streetGeometry(s, y = 0.02) {
+  const pos = [];
+  const uv = [];
+  for (const [[ax, az], [bx, bz]] of s.segs) {
+    const len = Math.hypot(bx - ax, bz - az);
+    const nx = (-(bz - az) / len) * s.halfWidth;
+    const nz = ((bx - ax) / len) * s.halfWidth;
+    const quad = [
+      [ax + nx, az + nz],
+      [ax - nx, az - nz],
+      [bx - nx, bz - nz],
+      [bx + nx, bz + nz],
+    ];
+    for (const i of [0, 2, 1, 0, 3, 2]) {
+      pos.push(quad[i][0], y, quad[i][1]);
+      uv.push(quad[i][0] / 2, quad[i][1] / 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
   return g;
 }

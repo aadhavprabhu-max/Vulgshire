@@ -216,7 +216,7 @@ export function flickerTorches(torches, t) {
 export function mergedMesh(geos, material, { cast = false, receive = true } = {}) {
   const flat = geos.map((g) => (g.index ? g.toNonIndexed() : g));
   for (const g of flat) {
-    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(name)) g.deleteAttribute(name);
   }
   const mesh = new THREE.Mesh(mergeGeometries(flat, false), material);
   mesh.castShadow = cast;
