@@ -114,7 +114,7 @@ function frame() {
   }
   sky.position.set(camera.position.x, 0, camera.position.z); // sky follows the camera
   retro.render(scene, camera);
-  if (++frames === 10) window.__vulgshire = { ready: true };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings };
   requestAnimationFrame(frame);
 }
 frame();

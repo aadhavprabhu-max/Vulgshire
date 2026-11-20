@@ -30,11 +30,15 @@ function lambert(map, opts = {}) {
 function mats() {
   return {
     stone: lambert(tex.stoneWall()),
+    // "Baked" shade for surfaces under the walkway roof: hemisphere light
+    // can't be occluded, so we darken these materials like a lightmap would.
+    stoneShade: lambert(tex.stoneWall(), { color: 0x5a5a6c }),
+    floorShade: lambert(tex.flagstone(), { color: 0x66667a }),
     darkStone: lambert(tex.darkStone()),
     column: lambert(tex.column()),
     floor: lambert(tex.flagstone()),
     slate: lambert(tex.slate(), { side: THREE.DoubleSide }),
-    wood: lambert(tex.wood()),
+    wood: lambert(tex.wood(), { color: 0x777788 }),
     grass: lambert(tex.grass()),
     soil: lambert(tex.soil()),
     statue: lambert(tex.statue(), { flatShading: true }),
@@ -134,9 +138,34 @@ function arcadeWall(L, n, mat) {
     shape.holes.push(archHole(x0, x1, i === door ? -0.2 : PLINTH, SPRING, 0.8));
     bays.push([x0, x1, i === door]);
   }
+  const traceries = bays.filter((b) => !b[2]).map(([x0, x1]) => tracery(x0, x1, mat));
   for (let i = 0; i <= n; i++) piers.push(-L / 2 + p / 2 + i * (s + p));
   const g = scaleUV(new THREE.ExtrudeGeometry(shape, { depth: ARC_T, bevelEnabled: false, curveSegments: 1 }), 0.5);
-  return { mesh: shadowy(new THREE.Mesh(g, mat)), piers, bays, pierW: p };
+  return { mesh: shadowy(new THREE.Mesh(g, mat)), piers, bays, pierW: p, traceries };
+}
+
+// Plate tracery filling one arch: two lancets and a round window above them.
+function tracery(x0, x1, mat) {
+  const mid = (x0 + x1) / 2;
+  const outline = new THREE.Shape();
+  outline.moveTo(x0, PLINTH);
+  for (const [x, y] of archPoints(x0, x1, SPRING, 0.8)) outline.lineTo(x, y);
+  outline.lineTo(x1, PLINTH);
+  outline.lineTo(x0, PLINTH);
+  const m = 0.08; // half mullion width
+  const e = 0.06; // frame strip
+  outline.holes.push(archHole(x0 + e, mid - m, PLINTH + 0.02, SPRING + 0.1, 0.8));
+  outline.holes.push(archHole(mid + m, x1 - e, PLINTH + 0.02, SPRING + 0.1, 0.8));
+  // Oculus between the lancet tips and the main apex.
+  const lancetApex = archPoints(x0 + e, mid - m, SPRING + 0.1, 0.8)[7][1];
+  const apex = archPoints(x0, x1, SPRING, 0.8)[7][1];
+  const cy = (lancetApex + apex) / 2;
+  const rad = Math.min(0.3, (apex - lancetApex) / 2 - 0.07);
+  const ring = new THREE.Path();
+  ring.absarc(mid, cy, rad, 0, Math.PI * 2, false);
+  outline.holes.push(ring);
+  const g = scaleUV(new THREE.ExtrudeGeometry(outline, { depth: 0.12, bevelEnabled: false, curveSegments: 8 }), 0.5);
+  return shadowy(new THREE.Mesh(g, mat));
 }
 
 // Transverse rib arch spanning the walkway (frames the view like the big
@@ -218,6 +247,10 @@ export function buildCloister() {
     arc.mesh.position.z = -B; // extrudes +z from -B to -G
     g.add(arc.mesh);
     cameraBlockers.push(arc.mesh);
+    for (const tr of arc.traceries) {
+      tr.position.z = -B + ARC_T / 2 - 0.06;
+      g.add(tr);
+    }
 
     // Colliders: arcade wall except the doorway bay; pier stubs inside the door.
     for (const [x0, x1, isDoor] of arc.bays) {
@@ -242,7 +275,7 @@ export function buildCloister() {
 
     // Transverse ribs across the walkway at every pier.
     for (const x of arc.piers) {
-      const rib = ribArch(M.stone);
+      const rib = ribArch(M.stoneShade);
       rib.rotation.y = Math.PI / 2;
       rib.position.set(x - 0.13, 0, -B);
       g.add(rib);
@@ -252,6 +285,11 @@ export function buildCloister() {
     // Walkway ceiling (wood) and lean-to slate roof above it.
     const span = longSide ? 2 * C : 2 * B;
     g.add(box(span, 0.12, WALK, M.wood, 0, ARC_TOP + 0.06, -(B + C) / 2, 2));
+    const walkFloor = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(span, WALK), 0.5), M.floorShade);
+    walkFloor.rotation.x = -Math.PI / 2;
+    walkFloor.position.set(0, 0.01 + (longSide ? 0.002 : 0), -(B + C) / 2);
+    walkFloor.receiveShadow = true;
+    g.add(walkFloor);
     const roofLen = longSide ? 2 * D + 0.6 : 2 * B;
     const z0 = -D - 0.2;
     const y0 = WALL_H + 0.15;
@@ -267,7 +305,7 @@ export function buildCloister() {
 
     // Outer wall.
     const wallLen = longSide ? 2 * D : 2 * C;
-    const wall = box(wallLen, WALL_H, D - C, M.stone, 0, WALL_H / 2, -(C + D) / 2);
+    const wall = box(wallLen, WALL_H, D - C, M.stoneShade, 0, WALL_H / 2, -(C + D) / 2);
     g.add(wall);
     cameraBlockers.push(wall);
     addCollider(angle, -wallLen / 2, wallLen / 2, -D, -C);
@@ -302,9 +340,10 @@ export function buildCloister() {
   // Arms folded holding a book.
   statue.add(box(0.62, 0.18, 0.3, M.statue, 0, 3.05, 0.26, 1));
   statue.add(box(0.36, 0.44, 0.1, M.statue, 0, 3.1, 0.44, 1));
-  statue.rotation.y = Math.PI * 0.75; // faces the starting corner (south-west)
+  statue.rotation.y = Math.PI * 0.85; // faces the south door
+  statue.scale.setScalar(1.15);
   root.add(statue);
-  colliders.push({ minX: -0.85, maxX: 0.85, minZ: -0.85, maxZ: 0.85 });
+  colliders.push({ minX: -0.95, maxX: 0.95, minZ: -0.95, maxZ: 0.95 });
 
   // ---- Flower beds -----------------------------------------------------
   const beds = [];
@@ -345,7 +384,7 @@ export function buildCloister() {
     for (let i = 0; i < area * 2.2; i++) flowerSpots.bush.push([x0 + 0.3 + rnd() * (w - 0.6), z0 + 0.3 + rnd() * (d - 0.6)]);
   }
   root.add(crossedSprites(flowerSpots.bush, new THREE.MeshLambertMaterial({ map: tex.bush(), alphaTest: 0.5, side: THREE.DoubleSide }), 0.4, 0.75, rnd));
-  const glowWhite = new THREE.MeshBasicMaterial({ map: tex.flower('white'), alphaTest: 0.5, side: THREE.DoubleSide, color: 0xb4bcd8 });
+  const glowWhite = new THREE.MeshBasicMaterial({ map: tex.flower('white'), alphaTest: 0.5, side: THREE.DoubleSide, color: 0xc6cde6 });
   const glowBlue = new THREE.MeshBasicMaterial({ map: tex.flower('blue'), alphaTest: 0.5, side: THREE.DoubleSide, color: 0x8f9cd0 });
   root.add(crossedSprites(flowerSpots.white, glowWhite, 0.35, 0.6, rnd));
   root.add(crossedSprites(flowerSpots.blue, glowBlue, 0.45, 0.8, rnd));
@@ -356,8 +395,8 @@ export function buildCloister() {
   root.add(box(28, 13, 12, M.stone, -2, 6.5, churchZ));
   root.add(gableRoof(28.6, 12, 6, M.slate, -2, 13, churchZ));
   for (let i = 0; i < 5; i++) {
-    const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 3.0), M.window);
-    win.position.set(-12 + i * 4.6, 10.2, churchZ + 6.02);
+    const win = lancet(1.2, 3.4, M.window);
+    win.position.set(-12 + i * 4.6, 8.6, churchZ + 6.02);
     root.add(win);
   }
   // Twin-spired tower at the church's west end.
@@ -378,8 +417,8 @@ export function buildCloister() {
     [-1.4, 3.02],
     [1.4, 3.02],
   ]) {
-    const belfry = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 3.4), M.window);
-    belfry.position.set(tx + ox, 19.5, tz + oz);
+    const belfry = lancet(1.1, 3.6, M.window);
+    belfry.position.set(tx + ox, 18, tz + oz);
     root.add(belfry);
   }
 
@@ -425,6 +464,20 @@ export function buildCloister() {
   }
 
   return { root, colliders, cameraBlockers, torches, spawn: new THREE.Vector3(0.2, 0, 4.4), spawnYaw: -0.5 };
+}
+
+// Flat pointed-arch window (dark glass), bottom-centred at the origin.
+function lancet(w, h, mat) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, 0);
+  for (const [x, y] of archPoints(-w / 2, w / 2, h - w * 0.75, 0.8)) s.lineTo(x, y);
+  s.lineTo(w / 2, 0);
+  s.lineTo(-w / 2, 0);
+  const g = new THREE.ShapeGeometry(s);
+  // Map UVs to the 0..1 window texture.
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + w / 2) / w, uv.getY(i) / h);
+  return new THREE.Mesh(g, mat);
 }
 
 function rotY(mesh, x, z) {

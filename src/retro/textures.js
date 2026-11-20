@@ -301,7 +301,7 @@ export const tex = {
   windowDark: () =>
     cached('windowDark', () => {
       const r = rng(59);
-      return toTexture(paint(8, 16, (x, y) => (x === 0 || x === 7 || y === 0 ? [40, 38, 44, 255] : shade([20, 22, 34], 0.7 + r() * 0.6).concat(255))), { repeat: false });
+      return toTexture(paint(8, 16, (x, y) => (x === 0 || x === 7 || x === 4 ? [28, 27, 32, 255] : shade([14, 16, 26], 0.7 + r() * 0.6).concat(255))), { repeat: false });
     }),
 };
 
