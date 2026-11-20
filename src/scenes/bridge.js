@@ -1,46 +1,60 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos, quadGeo, mulberry } from './kit.js';
-import { buildTown } from './town.js';
-import { smokeColumn, embers, fireCluster } from './fx.js';
+import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos } from './kit.js';
+import { buildTown, street, lotsAlongStreets, buildLots, streetGeometry } from './town.js';
+import { smokeColumn, embers } from './fx.js';
+import { buildCastle } from './castle.js';
 import { createGuard } from '../characters/guard.js';
+import { LOCATIONS } from '../data/world.js';
 
-// The torch-lit bridge to the burning castle (reference 03-burning-castle-bridge.png).
-// Placement on the final map: the stone bridge over the NORTH river, just west of
-// the Crownkeep (the royal fortress on high ground). The river runs across the
-// view and flows south into the lake; the monk walks east (-Z here) toward the keep.
+// WALKABLE ZONE: "North River Crossing" (reference 03 for the look).
+// Laid out from the final map around the stone bridge over the NORTH river,
+// west of the Crownkeep. See docs/map-locations.png and src/data/locations.json.
 //
-// Heights: bridge deck y = 0, river surface y = -9, town banks y = -3,
-// castle hill top y = +12.
+// Zone coordinates: x = east, z = south, 1 map pixel = 1.4 m (map scale x 1/4),
+// origin at the bridge centre (map px 665,167). Everything walkable is at y = 0.
+// The river surface is at y = -6 between stone quays.
 
-const DECK_W = 7;
-const HALF = DECK_W / 2;
-const Z_START = 16;
-const Z_END = -72;
-const WATER_Y = -9;
-const BANK_Y = -3;
-const RIVER_NEAR = -10; // river spans z in [RIVER_FAR, RIVER_NEAR]
-const RIVER_FAR = -62;
-const HILL = { x: 0, z: -168, r: 55, top: 12, slope: 34 };
-const STORM_DIR = new THREE.Vector3(-0.25, 0.55, -1).normalize(); // dim backlight from behind the castle
+const ZONE = LOCATIONS.zones.find((z) => z.id === 'north-river-crossing');
+const K = LOCATIONS.metresPerPixel * LOCATIONS.gameScale; // 1.4 m per map px
+const px = ([x, y]) => [(x - ZONE.originPx[0]) * K, (y - ZONE.originPx[1]) * K];
 
-function hillY(x, z) {
-  const d = Math.hypot(x - HILL.x, z - HILL.z);
-  if (d > HILL.r + HILL.slope) return BANK_Y;
-  if (d < HILL.r) return HILL.top;
-  const t = (d - HILL.r) / HILL.slope;
-  return HILL.top + (BANK_Y - HILL.top) * t;
+// River centreline traced from the map (map px), flowing south into the lake.
+const RIVER_PX = [
+  [636, -20],
+  [650, 80],
+  [665, 130],
+  [665, 165],
+  [675, 192],
+  [690, 220],
+  [710, 250],
+  [735, 300],
+];
+const RW = 21; // river half-width (map: ~30 px wide)
+const WATER_Y = -6;
+const BOUNDS = { x0: -155, x1: 98, z0: -78, z1: 88 }; // walkable area
+const CASTLE = { x: 205, z: 0, top: 12, r: 55, slope: 34 }; // Crownkeep hill (map px ~812,167)
+const STORM_DIR = new THREE.Vector3(0.95, 0.5, -0.2).normalize(); // dim backlight from behind the keep
+
+// Dense river samples [x, z] in zone metres.
+function riverSamples() {
+  const curve = new THREE.CatmullRomCurve3(
+    RIVER_PX.map((p) => {
+      const [x, z] = px(p);
+      return new THREE.Vector3(x, 0, z);
+    }),
+  );
+  return curve.getSpacedPoints(160).map((v) => [v.x, v.z]);
 }
 
 function mats() {
   return {
     stone: lambert(tex.stoneWall()),
     castle: lambert(tex.castleStone()),
-    darkStone: lambert(tex.darkStone()),
     cobble: lambert(tex.cobble()),
+    paving: lambert(tex.flagstone(), { color: 0xc8c0b8 }),
     slate: lambert(tex.slate()),
     rock: lambert(tex.darkStone(), { color: 0x6a6070 }),
-    soil: lambert(tex.cobble(), { color: 0x6a645c }),
     wood: lambert(tex.wood()),
     iron: lambert(null, { color: 0x1e1c1c }),
     lit: new THREE.MeshBasicMaterial({ map: tex.litWindow() }),
@@ -49,8 +63,8 @@ function mats() {
   };
 }
 
-// Extruded gate block (width along X, depth along Z) with a pointed arch passage.
-function gateBlock(width, height, depth, archW, archSpring, mat, yBase = -14) {
+// Extruded gate block: width along X, passage along Z (rotate for other axes).
+function gateBlock(width, height, depth, archW, archSpring, mat, yBase = -9) {
   const s = new THREE.Shape();
   s.moveTo(-width / 2, yBase);
   s.lineTo(width / 2, yBase);
@@ -63,394 +77,462 @@ function gateBlock(width, height, depth, archW, archSpring, mat, yBase = -14) {
   return shadowy(new THREE.Mesh(g, mat));
 }
 
-// Torch on a wooden post (stands on the parapet).
-function postTorch(x, z, M, withLight = true) {
+function torchFlame(x, y, z, withLight, scale = 1.6) {
   const g = new THREE.Group();
-  g.position.set(x, 1.0, z);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.7, 5), M.wood);
-  post.position.y = 0.85;
-  post.castShadow = true;
-  g.add(post);
-  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.12, 0.22, 5), M.iron);
-  cup.position.y = 1.8;
-  g.add(cup);
+  g.position.set(x, y, z);
   const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.flame(), fog: true }));
-  flame.position.y = 2.15;
   g.add(flame);
-  // Only every other torch casts real light (keeps the light count sane).
   let light = null;
   if (withLight) {
     light = new THREE.PointLight(0xff8c3a, 8, 16, 2);
-    light.position.y = 2.3;
+    light.position.y = 0.2;
     g.add(light);
   }
-  return { group: g, flame, light, base: 8, phase: Math.random() * 10, flameScale: 1.6 };
+  return { group: g, flame, light, base: 8, phase: Math.random() * 10, flameScale: scale };
 }
 
-function buildBridge() {
+function postTorch(x, z, M, withLight) {
+  const t = torchFlame(x, 3.15, z, withLight);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.7, 5), M.wood);
+  post.position.set(x, 1.85, z);
+  post.castShadow = true;
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.12, 0.22, 5), M.iron);
+  cup.position.set(x, 2.8, z);
+  return { ...t, extra: [post, cup] };
+}
+
+// Flat ribbon between two polylines at heights yL / yR.
+function ribbon(left, right, yL, yR, uvScale = 0.5) {
+  const pos = [];
+  const uv = [];
+  let acc = 0;
+  for (let i = 0; i < left.length - 1; i++) {
+    const seg = Math.hypot(left[i + 1][0] - left[i][0], left[i + 1][1] - left[i][1]);
+    const span = Math.hypot(left[i][0] - right[i][0], left[i][1] - right[i][1], yL - yR);
+    const q = [
+      [left[i][0], yL, left[i][1], acc, 0],
+      [right[i][0], yR, right[i][1], acc, span],
+      [right[i + 1][0], yR, right[i + 1][1], acc + seg, span],
+      [left[i + 1][0], yL, left[i + 1][1], acc + seg, 0],
+    ];
+    acc += seg;
+    for (const k of [0, 2, 1, 0, 3, 2]) {
+      pos.push(q[k][0], q[k][1], q[k][2]);
+      uv.push(q[k][3] * uvScale, q[k][4] * uvScale);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+// Vertical wall strip along a polyline from y0 (top) to y1 (bottom).
+function wallStrip(line, y0, y1, flip) {
+  const pos = [];
+  const uv = [];
+  let acc = 0;
+  for (let i = 0; i < line.length - 1; i++) {
+    const [ax, az] = line[i];
+    const [bx, bz] = line[i + 1];
+    const seg = Math.hypot(bx - ax, bz - az);
+    const q = [
+      [ax, y0, az, acc, 0],
+      [ax, y1, az, acc, y0 - y1],
+      [bx, y1, bz, acc + seg, y0 - y1],
+      [bx, y0, bz, acc + seg, 0],
+    ];
+    acc += seg;
+    for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
+      pos.push(q[k][0], q[k][1], q[k][2]);
+      uv.push(q[k][3] / 2, q[k][4] / 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+function buildZone() {
   const M = mats();
   const root = new THREE.Group();
-  root.name = 'bridge';
+  root.name = 'north-river-crossing';
   const colliders = [];
   const cameraBlockers = [];
   const animated = [];
   const torches = [];
 
-  // ---- Bridge deck, parapets, crenellations --------------------------------
-  const len = Z_START - Z_END;
-  const midZ = (Z_START + Z_END) / 2;
-  root.add(box(DECK_W, 1.4, len, M.cobble, 0, -0.7, midZ));
+  // ---- River -------------------------------------------------------------
+  const river = riverSamples();
+  const riverDist = (x, z) => {
+    let d = Infinity;
+    for (let i = 0; i < river.length - 1; i++) {
+      const [ax, az] = river[i];
+      const [bx, bz] = river[i + 1];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+      d = Math.min(d, Math.hypot(x - ax - dx * t, z - az - dz * t));
+    }
+    return d;
+  };
+  // Unit normals pointing to the EAST bank (flow runs south, +z).
+  const normals = river.map((_, i) => {
+    const [ax, az] = river[Math.max(0, i - 1)];
+    const [bx, bz] = river[Math.min(river.length - 1, i + 1)];
+    const l = Math.hypot(bx - ax, bz - az);
+    return [(bz - az) / l, -(bx - ax) / l];
+  });
+  const offset = (off) => river.map(([x, z], i) => [x + normals[i][0] * off, z + normals[i][1] * off]);
+  const water = new THREE.Mesh(ribbon(offset(-RW - 1), offset(RW + 1), WATER_Y, WATER_Y, 0.25), M.water);
+  root.add(water);
+  // Quay walls and the paved quay tops.
+  root.add(mergedMesh([wallStrip(offset(-RW), 0, WATER_Y - 1, true), wallStrip(offset(RW), 0, WATER_Y - 1, false)], M.stone)); // both face the water
+  root.add(mergedMesh([ribbon(offset(-RW - 3.2), offset(-RW), 0.02, 0.02), ribbon(offset(RW), offset(RW + 3.2), 0.02, 0.02)], M.paving));
+
+  // Low quay parapets with colliders (gap where the bridge lands).
   const parapets = [];
-  const merlons = [];
-  for (const s of [-1, 1]) {
-    parapets.push(boxGeo(0.6, 2.4, len, s * (HALF + 0.3), -0.2, midZ));
-    merlons.push(...merlonGeos(len, s * (HALF + 0.3), 1.0, midZ, Math.PI / 2));
-    // Outer string course under the parapet.
-    parapets.push(boxGeo(0.3, 0.3, len, s * (HALF + 0.7), -1.25, midZ));
-    colliders.push({ minX: s > 0 ? HALF : -HALF - 0.6, maxX: s > 0 ? HALF + 0.6 : -HALF, minZ: Z_END, maxZ: Z_START });
+  for (const side of [-1, 1]) {
+    const line = offset(side * (RW + 0.35));
+    for (let i = 0; i < line.length - 1; i += 2) {
+      const [ax, az] = line[i];
+      const [bx, bz] = line[Math.min(line.length - 1, i + 2)];
+      const mx = (ax + bx) / 2;
+      const mz = (az + bz) / 2;
+      if (Math.abs(mz) < 5.2) continue; // bridge abutment
+      const len = Math.hypot(bx - ax, bz - az);
+      const rot = Math.atan2(bx - ax, bz - az) + Math.PI / 2; // local x runs along the segment
+      parapets.push(boxGeo(len + 0.1, 0.9, 0.5, 0, 0, 0, 0, 1).rotateY(rot).translate(mx, 0.45, mz));
+      colliders.push({ cx: mx, cz: mz, hx: len / 2 + 0.05, hz: 0.3, rot, h: 1 });
+    }
   }
-  const parapetMesh = mergedMesh(parapets, M.stone, { cast: true });
-  root.add(parapetMesh, mergedMesh(merlons, M.stone, { cast: true }));
-  cameraBlockers.push(parapetMesh);
+  root.add(mergedMesh(parapets, M.stone, { cast: true }));
+  // Moored boats.
+  const boats = [];
+  for (const [i, side] of [
+    [30, -1],
+    [44, 1],
+    [104, -1],
+    [118, 1],
+  ]) {
+    const [x, z] = river[i];
+    const n = normals[i];
+    const rot = Math.atan2(n[0], n[1]) + Math.PI / 2;
+    boats.push(boxGeo(1.8, 0.7, 6, 0, 0, 0, 0, 1).rotateY(rot).translate(x + n[0] * side * (RW - 3), WATER_Y + 0.25, z + n[1] * side * (RW - 3)));
+  }
+  root.add(mergedMesh(boats, M.wood));
 
-  // ---- Piers and arches under the deck --------------------------------------
-  const piers = [];
-  const pierZs = [];
-  for (let z = 4; z > Z_END; z -= 12) pierZs.push(z);
-  for (const z of pierZs) {
-    piers.push(boxGeo(DECK_W + 1.2, 14, 3, 0, -7.4, z));
-    // Diamond cutwaters at the waterline.
-    for (const s of [-1, 1]) piers.push(boxGeo(2.1, 9, 2.1, s * (HALF + 0.9), WATER_Y + 1.5, z, Math.PI / 4));
+  // ---- Ground (cobbles everywhere except over the river) -----------------
+  {
+    const cell = 2;
+    const pos = [];
+    const uv = [];
+    for (let x = -270; x < 190; x += cell) {
+      for (let z = -150; z < 210; z += cell) {
+        if (riverDist(x + 1, z + 1) < RW + 1.5) continue;
+        const q = [
+          [x, z],
+          [x, z + cell],
+          [x + cell, z + cell],
+          [x + cell, z],
+        ];
+        for (const k of [0, 1, 2, 0, 2, 3]) {
+          pos.push(q[k][0], 0, q[k][1]);
+          uv.push(q[k][0] / 2, q[k][1] / 2);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    const ground = new THREE.Mesh(g, M.cobble);
+    ground.receiveShadow = true;
+    root.add(ground);
   }
-  root.add(mergedMesh(piers, M.stone, { cast: false }));
-  for (let i = 0; i < pierZs.length - 1; i++) {
-    const za = pierZs[i] - 1.5;
-    const zb = pierZs[i + 1] + 1.5;
-    const span = za - zb;
+
+  // ---- The bridge (map px ~643..687 at y 167) -------------------------------
+  const BX = 27; // half length incl. abutments
+  const HALF = 3.5;
+  root.add(box(2 * BX, 1.2, 2 * HALF, M.cobble, 0, -0.6, 0));
+  {
     const s = new THREE.Shape();
-    s.moveTo(0, -14);
-    s.lineTo(span, -14);
-    s.lineTo(span, -1.4);
-    s.lineTo(0, -1.4);
-    s.lineTo(0, -14);
-    s.holes.push(archHole(0, span, -13.9, WATER_Y + 0.5, 0.6));
-    const g = scaleUV(new THREE.ExtrudeGeometry(s, { depth: DECK_W + 0.8, bevelEnabled: false }), 0.5);
-    const m = new THREE.Mesh(g, M.stone);
-    m.receiveShadow = true;
-    m.rotation.y = Math.PI / 2; // shape u -> -z, extrude -> +x
-    m.position.set(-(DECK_W + 0.8) / 2, 0, za);
-    root.add(m);
+    s.moveTo(-BX, -9);
+    s.lineTo(BX, -9);
+    s.lineTo(BX, -1.2);
+    s.lineTo(-BX, -1.2);
+    s.lineTo(-BX, -9);
+    const piers = [-15.4, -7.7, 0, 7.7, 15.4];
+    const edges = [-22, ...piers, 22];
+    for (let i = 0; i < edges.length - 1; i++) {
+      const xa = edges[i] + (i === 0 ? 0 : 1);
+      const xb = edges[i + 1] - (i === edges.length - 2 ? 0 : 1);
+      s.holes.push(archHole(xa, xb, -8.9, -5, 0.5));
+    }
+    const g = scaleUV(new THREE.ExtrudeGeometry(s, { depth: 2 * HALF + 1, bevelEnabled: false }), 0.5);
+    g.translate(0, 0, -(HALF + 0.5));
+    const arches = new THREE.Mesh(g, M.stone);
+    arches.receiveShadow = true;
+    root.add(arches);
+    const cut = [];
+    for (const p of piers) for (const sz of [-1, 1]) cut.push(boxGeo(1.6, 6, 1.6, p, WATER_Y + 1, sz * (HALF + 1.2), Math.PI / 4));
+    root.add(mergedMesh(cut, M.stone));
   }
-
-  // ---- Gate tower at the start (the monk begins inside its passage) ---------
-  const gateNear = gateBlock(13, 13, 7, 5.2, 3.6, M.stone);
-  gateNear.position.z = 11.5;
-  root.add(gateNear);
-  cameraBlockers.push(gateNear);
-  root.add(mergedMesh([...merlonGeos(13, 0, 13, 8.3, 0), ...merlonGeos(13, 0, 13, 14.7, 0)], M.stone));
-  colliders.push({ minX: -8, maxX: -2.55, minZ: 8, maxZ: 15 }, { minX: 2.55, maxX: 8, minZ: 8, maxZ: 15 }, { minX: -8, maxX: 8, minZ: 14.6, maxZ: 16 });
-  // Torches inside the gate passage.
-  for (const s of [-1, 1]) {
-    const t = postTorch(s * 2.2, 9.2, M);
-    t.group.position.y = 0;
-    t.group.children[0].visible = false; // wall-mounted: hide the post
-    t.flame.position.y = 2.6;
-    t.light.position.y = 2.7;
-    root.add(t.group);
-    torches.push(t);
+  const bp = [];
+  const bm = [];
+  for (const sz of [-1, 1]) {
+    bp.push(boxGeo(2 * BX, 2.2, 0.6, 0, -0.1, sz * (HALF + 0.3)));
+    bm.push(...merlonGeos(2 * BX, 0, 1.0, sz * (HALF + 0.3), 0));
+    colliders.push({ minX: -BX, maxX: BX, minZ: sz > 0 ? HALF : -HALF - 0.6, maxZ: sz > 0 ? HALF + 0.6 : -HALF, h: 1.6 });
   }
-
-  // ---- Torches on posts along both parapets, two with smoke columns ---------
-  const torchZs = [-4, -16, -28, -40, -52, -64, -76];
-  torchZs.forEach((z, i) => {
-    for (const s of [-1, 1]) {
-      const t = postTorch(s * (HALF + 0.3), z + (s > 0 ? 6 : 0), M, (i + (s > 0 ? 1 : 0)) % 2 === 0);
-      root.add(t.group);
+  root.add(mergedMesh(bp, M.stone, { cast: true }), mergedMesh(bm, M.stone, { cast: true }));
+  // Seal the corners where the quay parapets meet the bridge, so nobody slips onto the river.
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) colliders.push({ minX: sx < 0 ? -BX : 18.5, maxX: sx < 0 ? -18.5 : BX, minZ: sz < 0 ? -6.5 : 3.5, maxZ: sz < 0 ? -3.5 : 6.5, h: 1.6 });
+  // Bridge torches on posts; two of them trail blocky smoke columns.
+  [-20, -10, 0, 10, 20].forEach((x, i) => {
+    for (const sz of [-1, 1]) {
+      const tx = x + (sz > 0 ? 5 : 0);
+      if (tx > BX - 1) continue;
+      const t = postTorch(tx, sz * (HALF + 0.3), M, (i + (sz > 0 ? 1 : 0)) % 2 === 0);
+      root.add(t.group, ...t.extra);
       torches.push(t);
-      if ((i === 1 && s < 0) || (i === 2 && s > 0)) {
-        const smoke = smokeColumn({ x: s * (HALF + 0.3), y: 3.4, z: z + (s > 0 ? 6 : 0), height: 16, puffs: 16, size: 1.3 });
+      if ((i === 1 && sz < 0) || (i === 2 && sz > 0)) {
+        const smoke = smokeColumn({ x: tx, y: 3.4, z: sz * (HALF + 0.3), height: 16, puffs: 16, size: 1.3 });
         root.add(smoke.group);
         animated.push(smoke);
       }
     }
   });
+  // West bridge tower (the camera starts in its passage, like the reference).
+  const towerW = gateBlock(12, 13, 7, 6.4, 3.6, M.stone);
+  towerW.rotation.y = Math.PI / 2;
+  towerW.position.x = -BX - 3.5;
+  root.add(towerW);
+  cameraBlockers.push(towerW);
+  root.add(mergedMesh([...merlonGeos(12, -BX - 0.3, 13, 0, Math.PI / 2), ...merlonGeos(12, -BX - 6.7, 13, 0, Math.PI / 2)], M.stone));
+  root.add(spire(4.6, 8, M.slate, -BX - 3.5, 13.6, 0));
+  colliders.push({ minX: -BX - 7, maxX: -BX, minZ: -6, maxZ: -3.15 }, { minX: -BX - 7, maxX: -BX, minZ: 3.15, maxZ: 6 });
+  for (const sz of [-1, 1]) {
+    const t = torchFlame(-BX - 1.2, 2.7, sz * 2.4, sz < 0);
+    root.add(t.group);
+    torches.push(t);
+  }
 
-  // ---- Gatehouse at the far end: twin round towers, glowing passage --------
-  const gz = Z_END - 3;
-  const gateFar = gateBlock(16, 15, 8, 5, 4.2, M.castle);
-  gateFar.position.z = gz;
-  root.add(gateFar);
-  root.add(mergedMesh(merlonGeos(16, 0, 15, gz + 3.7, 0), M.castle));
-  for (const s of [-1, 1]) {
-    const tw = shadowy(new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(3.4, 3.8, 34, 8), 2), M.castle));
-    tw.position.set(s * 9.5, 3, gz); // spans y -14..20
+  // ---- North city wall on the west bank (map y ~ 110) -----------------------
+  {
+    const wz = -82;
+    const wx0 = -175;
+    const bank = offset(-RW).reduce((best, p) => (Math.abs(p[1] - wz) < Math.abs(best[1] - wz) ? p : best));
+    const wx1 = bank[0] - 1;
+    const len = wx1 - wx0;
+    root.add(box(len, 10, 3, M.stone, (wx0 + wx1) / 2, 5, wz));
+    root.add(mergedMesh(merlonGeos(len, (wx0 + wx1) / 2, 10, wz + 1.2, 0, { w: 0.9, h: 1, d: 0.7, gap: 0.8 }), M.stone));
+    for (const tx of [-150, -110, -70, wx1 - 2]) {
+      const t = shadowy(new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(3.6, 4, 16, 8), 2), M.stone));
+      t.position.set(tx, 8, wz);
+      root.add(t);
+      root.add(spire(4.6, 7, M.slate, tx, 16, wz, 8));
+    }
+    colliders.push({ minX: wx0, maxX: wx1 + 4, minZ: wz - 2, maxZ: wz + 1.6 });
+  }
+
+  // ---- Streets (traced from the final map's west and east banks) -------------
+  const westLane = street(offset(-RW - 6.5).filter(([, z]) => z > -80 && z < 100), 3);
+  const eastLane = street(offset(RW + 6.5).filter(([, z]) => z > -100 && z < 100), 3);
+  const streets = [
+    street([[-BX - 7, 0], [-48, 4], [-62, 14], [-80, 30], [-105, 46], [-130, 60], [-175, 82]], 4.5), // main road SW toward the Old Town
+    street([[-BX - 7, -1], [-55, -9], [-90, -12], [-125, -14], [-175, -12]], 3.5), // west road
+    street([[-38, -40], [-70, -36], [-105, -33], [-140, -38], [-175, -36]], 3), // street under the north wall
+    street([[-95, -78], [-92, -33], [-90, -12], [-92, 20], [-105, 46], [-112, 95]], 3), // north-south street
+    street([[-148, -78], [-140, -38], [-132, -14], [-130, 60]], 3),
+    street([[-20, 52], [-48, 64], [-82, 84], [-95, 110]], 2.6), // south lane
+    street([[-62, 14], [-50, 36], [-30, 46]], 2.4), // alley off the market square
+    street([[-70, -36], [-62, -20], [-55, -9]], 2.4),
+    westLane,
+    street([[BX, 0], [60, -2], [100, 0]], 4.5), // castle road (east bank)
+    eastLane,
+    street([[45, -70], [55, -30], [60, -2], [66, 40], [80, 80]], 3),
+  ];
+  const squares = [
+    { x: -62, z: 14, r: 13 }, // market square
+    { x: 60, z: -2, r: 9 },
+  ];
+  const paving = streets.map((s) => streetGeometry(s, 0.015));
+  for (const q of squares) {
+    const g = new THREE.CircleGeometry(q.r, 16);
+    g.rotateX(-Math.PI / 2);
+    g.translate(q.x, 0.016, q.z);
+    paving.push(scaleUV(g, q.r));
+  }
+  root.add(mergedMesh(paving, M.paving));
+
+  // Market square: a well with a wooden frame and a torch.
+  const well = shadowy(new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(1.4, 1.5, 0.9, 8), 1), M.stone));
+  well.position.set(-62, 0.45, 14);
+  root.add(well);
+  root.add(box(0.15, 2.2, 0.15, M.wood, -63.2, 1.1, 14, 1), box(0.15, 2.2, 0.15, M.wood, -60.8, 1.1, 14, 1), box(2.6, 0.15, 0.15, M.wood, -62, 2.2, 14, 1));
+  colliders.push({ cx: -62, cz: 14, hx: 1.5, hz: 1.5, rot: 0, h: 1 });
+  const sqTorch = torchFlame(-62, 2.6, 16.2, true, 1.2);
+  root.add(sqTorch.group);
+  torches.push(sqTorch);
+
+  // ---- Buildings: varied houses lining every street, infill behind --------------
+  const inZone = (x, z) => x > -200 && x < 112 && z > -80 && z < 130;
+  const nearCastle = (x, z, r) => Math.hypot(x - CASTLE.x, z - CASTLE.z) < CASTLE.r + CASTLE.slope + 8 + r;
+  const blocked = (x, z, r) =>
+    !inZone(x, z) ||
+    riverDist(x, z) < RW + 4 + r ||
+    (Math.abs(z) < 7 + r && x > -BX - 9 && x < BX + 2) ||
+    squares.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + r) ||
+    nearCastle(x, z, r) ||
+    x > 92 - r;
+  const lots = lotsAlongStreets({ seed: 5, streets, blocked, infillBounds: [-200, 112, -78, 130], infillCount: 120 });
+  const built = buildLots(lots, 77, { litChance: 0.38 });
+  root.add(built.group);
+  colliders.push(...built.colliders);
+  // Distant districts beyond the zone (skyline only).
+  root.add(
+    buildTown({
+      seed: 31,
+      count: 260,
+      bounds: [-330, 200, -260, 300],
+      avoid: (x, z, r) => inZone(x, z) || riverDist(x, z) < RW + 4 + r || nearCastle(x, z, r) || (x > 92 && Math.abs(z) < 80),
+    }),
+  );
+
+  // ---- Zone boundary: invisible walls + wooden barricades where streets leave ----
+  const { x0, x1, z0, z1 } = BOUNDS;
+  colliders.push(
+    { minX: x0 - 2, maxX: x0, minZ: z0 - 10, maxZ: z1 + 10 },
+    { minX: x1, maxX: x1 + 2, minZ: z0 - 10, maxZ: z1 + 10 },
+    { minX: x0 - 10, maxX: x1 + 10, minZ: z0 - 2, maxZ: z0 },
+    { minX: x0 - 10, maxX: x1 + 10, minZ: z1, maxZ: z1 + 2 },
+  );
+  const fence = [];
+  const inside = (x, z) => x > x0 && x < x1 && z > z0 && z < z1;
+  for (const s of streets) {
+    for (const [[ax, az], [bx, bz]] of s.segs) {
+      const len = Math.hypot(bx - ax, bz - az);
+      for (let t = 0; t < len; t += 0.5) {
+        const x = ax + ((bx - ax) * t) / len;
+        const z = az + ((bz - az) * t) / len;
+        const xn = ax + ((bx - ax) * (t + 0.5)) / len;
+        const zn = az + ((bz - az) * (t + 0.5)) / len;
+        if (inside(x, z) === inside(xn, zn)) continue;
+        const rot = Math.atan2(bx - ax, bz - az) + Math.PI / 2;
+        const w = s.halfWidth * 2 + 1;
+        fence.push(boxGeo(w, 0.18, 0.12, 0, 0, 0, 0, 1).rotateY(rot).translate(x, 0.6, z));
+        fence.push(boxGeo(w, 0.18, 0.12, 0, 0, 0, 0, 1).rotateY(rot).translate(x, 1.1, z));
+        for (let k = -1; k <= 1; k++) fence.push(boxGeo(0.2, 1.4, 0.2, 0, 0, 0, 0, 1).translate((k * w) / 2.2, 0.7, 0).rotateY(rot).translate(x, 0, z));
+      }
+    }
+  }
+  if (fence.length) root.add(mergedMesh(fence, M.wood));
+
+  // ---- East bank: castle road, gatehouse, the Crownkeep on its hill ------------
+  const GX = 100;
+  const gate = gateBlock(16, 15, 8, 5, 4.2, M.castle);
+  gate.rotation.y = Math.PI / 2;
+  gate.position.x = GX;
+  root.add(gate);
+  cameraBlockers.push(gate);
+  root.add(mergedMesh(merlonGeos(16, GX - 3.7, 15, 0, Math.PI / 2), M.castle));
+  for (const sz of [-1, 1]) {
+    const tw = shadowy(new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(3.4, 3.8, 29, 8), 2), M.castle));
+    tw.position.set(GX, 5.5, sz * 9.5);
     root.add(tw);
-    root.add(spire(4.4, 9, M.slate, s * 9.5, 20, gz, 8));
+    root.add(spire(4.4, 9, M.slate, GX, 20, sz * 9.5, 8));
     for (let k = 0; k < 3; k++) {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.2), M.lit);
-      w.position.set(s * 9.5, 6 + k * 4.2, gz + 3.85);
+      w.position.set(GX - 3.85, 6 + k * 4.2, sz * 9.5);
+      w.rotation.y = -Math.PI / 2;
       root.add(w);
     }
   }
-  // Warm light glowing through the closed gate.
+  // Curtain wall running from the gatehouse along the foot of the hill.
+  root.add(box(3, 11, 90, M.castle, GX + 2, 5.5, 0));
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 6.5), M.gateGlow);
-  glow.position.set(0, 3.2, gz - 0.5);
+  glow.rotation.y = -Math.PI / 2;
+  glow.position.set(GX + 0.5, 3.2, 0);
   root.add(glow);
   const gateLight = new THREE.PointLight(0xff8a30, 18, 26, 1.6);
-  gateLight.position.set(0, 3, gz + 5);
+  gateLight.position.set(GX - 5, 3, 0);
   root.add(gateLight);
-  colliders.push({ minX: -9, maxX: 9, minZ: gz - 4, maxZ: gz + 3.2 });
-
-  // ---- River, quays, banks --------------------------------------------------
-  const water = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(900, RIVER_NEAR - RIVER_FAR + 4), 0.25), M.water);
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(0, WATER_Y, (RIVER_NEAR + RIVER_FAR) / 2);
-  root.add(water);
-  const quays = [];
-  for (const z of [RIVER_NEAR, RIVER_FAR]) quays.push(boxGeo(900, BANK_Y - WATER_Y + 3, 1.2, 0, (BANK_Y + WATER_Y - 3) / 2, z + (z === RIVER_NEAR ? 0.6 : -0.6)));
-  root.add(mergedMesh(quays, M.stone));
-  const nearBank = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(900, 260), 130), M.soil);
-  nearBank.rotation.x = -Math.PI / 2;
-  nearBank.position.set(0, BANK_Y, RIVER_NEAR + 130);
-  nearBank.receiveShadow = true;
-  root.add(nearBank);
-  const farBank = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(900, 300), 150), M.soil);
-  farBank.rotation.x = -Math.PI / 2;
-  farBank.position.set(0, BANK_Y, RIVER_FAR - 150);
-  root.add(farBank);
-  // Amber reflections of the fires and torches, streaking across the water.
-  const refl = [];
-  const rr = mulberry(5);
-  for (let i = 0; i < 26; i++) {
-    const x = (rr() - 0.5) * 70;
-    const g = new THREE.PlaneGeometry(0.3 + rr() * 0.6, 4 + rr() * 14);
-    g.rotateX(-Math.PI / 2);
-    g.translate(x, WATER_Y + 0.05, RIVER_FAR + 4 + rr() * (RIVER_NEAR - RIVER_FAR - 8));
-    refl.push(g);
+  colliders.push({ minX: GX - 4, maxX: GX + 6, minZ: -60, maxZ: 60 });
+  for (const sz of [-1, 1]) {
+    const t = torchFlame(GX - 4.3, 3.2, sz * 3.4, false, 1.4);
+    root.add(t.group);
+    torches.push(t);
   }
-  const reflMat = new THREE.MeshBasicMaterial({ color: 0xff8a30, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
-  const reflMesh = mergedMesh(refl, reflMat);
-  root.add(reflMesh);
 
-  // ---- Castle hill and the Crownkeep ------------------------------------------
-  const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(HILL.r, HILL.r + HILL.slope, HILL.top - BANK_Y, 12, 1), 6), M.rock);
-  hill.position.set(HILL.x, (HILL.top + BANK_Y) / 2, HILL.z);
-  hill.receiveShadow = true;
+  const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(CASTLE.r, CASTLE.r + CASTLE.slope, CASTLE.top, 12, 1), 6), M.rock);
+  hill.position.set(CASTLE.x, CASTLE.top / 2, CASTLE.z);
   root.add(hill);
-
-  // Build the keep at map scale, then enlarge it around the hill top so it
-  // dominates the skyline like the reference.
-  const castle = buildCastle(M, HILL.z, HILL.top);
+  const castle = buildCastle(M, 0, CASTLE.top);
   const keep = new THREE.Group();
-  keep.position.set(HILL.x, HILL.top, HILL.z);
+  keep.position.set(CASTLE.x, CASTLE.top, CASTLE.z);
+  keep.rotation.y = -Math.PI / 2; // facade faces west, toward the bridge
   keep.scale.setScalar(1.45);
-  castle.group.position.set(-HILL.x, -HILL.top, -HILL.z);
+  castle.group.position.set(0, -CASTLE.top, 0);
   keep.add(castle.group);
   root.add(keep);
   animated.push(...castle.animated);
+  const em = embers({ count: 160, area: [0, CASTLE.top + 14, 10, 70, 18, 30], rise: 30, size: 2 });
+  castle.group.add(em.group);
+  animated.push(em);
 
-  // ---- Town on both banks and up the hill's skirts ---------------------------
-  const avoidRiverAndRoads = (x, z, r) =>
-    (z + r > RIVER_FAR - 2 && z - r < RIVER_NEAR + 2) || // river
-    Math.abs(x) < 10 + r || // bridge approach / main road
-    Math.hypot(x - HILL.x, z - HILL.z) < HILL.r + 10 + r || (Math.abs(x) < 26 + r && z < RIVER_FAR && z > Z_END - 40); // castle hill top and gate approach
-  root.add(
-    buildTown({ seed: 11, count: 150, bounds: [-170, 170, RIVER_NEAR + 3, 90], groundY: () => BANK_Y, avoid: avoidRiverAndRoads, minH: 6, maxH: 13, litChance: 0.35 }),
-  );
-  root.add(
-    buildTown({ seed: 23, count: 190, bounds: [-200, 200, -230, RIVER_FAR - 3], groundY: hillY, avoid: avoidRiverAndRoads, minH: 6, maxH: 12, litChance: 0.4, spireChance: 0.06 }),
-  );
-
-  // ---- Guards patrolling the bridge ---------------------------------------------
+  // ---- Guards patrolling between the west tower and the gatehouse --------------
   const guards = [
-    { x: -1.1, z: -8 },
-    { x: 1.1, z: -9 },
-    { x: 0.9, z: -24 },
-    { x: -1.3, z: -44 },
+    { x: -12, z: -1.1 },
+    { x: -13, z: 1.1 },
+    { x: 8, z: 0.9 },
+    { x: 40, z: -1.4 },
   ].map(({ x, z }, i) => {
     const g = createGuard();
     g.root.position.set(x, 0, z);
     root.add(g.root);
     const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
     colliders.push(col);
-    return { ...g, dir: -1, speed: 1.05 + i * 0.05, col };
+    return { ...g, dir: 1, speed: 1.05 + i * 0.05, col };
   });
-
-  // Embers over the burning castle.
-  const em = embers({ count: 160, area: [0, HILL.top + 14, HILL.z + 10, 70, 18, 30], rise: 30, size: 2 });
-  root.add(em.group);
-  animated.push(em);
 
   return {
     root,
     sky: buildSky({ preset: 'storm' }),
     colliders,
     cameraBlockers,
-    spawn: new THREE.Vector3(-0.8, 0, 3),
-    spawnYaw: 0.03,
+    spawn: new THREE.Vector3(-25, 0, -0.9),
+    spawnYaw: -Math.PI / 2 + 0.03,
     spawnPitch: 0.2,
     lanternIntensity: 3,
     env: {
       fog: { color: 0x2a1736, density: 0.0052 },
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
-      dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 40, target: new THREE.Vector3(0, 0, -30) },
+      dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 45, target: new THREE.Vector3(-10, 0, 0) },
     },
     update(dt, t) {
       flickerTorches(torches, t);
       for (const a of animated) a.update(dt, t);
       water.material.map.offset.set(t * 0.004, t * 0.01);
-      reflMat.opacity = 0.28 + 0.06 * Math.sin(t * 3.1);
       for (const g of guards) {
-        g.root.position.z += g.dir * g.speed * dt;
-        if (g.root.position.z < Z_END + 6 && g.dir < 0) g.dir = 1;
-        if (g.root.position.z > 4 && g.dir > 0) g.dir = -1;
-        g.root.rotation.y = g.dir < 0 ? 0 : Math.PI;
+        g.root.position.x += g.dir * g.speed * dt;
+        if (g.root.position.x > GX - 8 && g.dir > 0) g.dir = -1;
+        if (g.root.position.x < -BX + 2 && g.dir < 0) g.dir = 1;
+        g.root.rotation.y = g.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
         g.update(dt, g.speed);
         const { x, z } = g.root.position;
-        Object.assign(g.col, { minX: x - 0.3, maxX: x + 0.3, minZ: z - 0.3, maxZ: z + 0.3 });
+        Object.assign(g.col, { minX: x - 0.3, maxX: x + 0.3, minZ: z - 0.3, maxZ: z + 0.3, h: 2.1 });
       }
     },
   };
 }
 
-// The Crownkeep: curtain wall with round towers, a tall gothic palace with a
-// forest of spires, rows of amber-lit windows, braziers, and fires on the roofs.
-function buildCastle(M, cz, top) {
-  const group = new THREE.Group();
-  const animated = [];
-  const castleGeos = [];
-  const merlons = [];
-  const lit = [];
-  const spires = [];
-  const rnd = mulberry(321);
-
-  const litGrid = (x, z, w, y0, rows, cols, rotY = 0, chance = 0.75) => {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (rnd() > chance) continue;
-        const u = -w / 2 + (w / cols) * (c + 0.5);
-        const px = x + Math.cos(rotY) * u;
-        const pz = z - Math.sin(rotY) * u;
-        lit.push(quadGeo(0.9, 1.6, px, y0 + r * 3.4, pz, rotY));
-      }
-    }
-  };
-  const tower = (x, z, w, h, spireH) => {
-    castleGeos.push(boxGeo(w, h, w, x, top + h / 2, z));
-    merlons.push(...merlonGeos(w + 0.6, x, top + h, z + w / 2, 0, { w: 0.8, h: 0.9, d: 0.8, gap: 0.7 }));
-    merlons.push(...merlonGeos(w + 0.6, x, top + h, z - w / 2, 0, { w: 0.8, h: 0.9, d: 0.8, gap: 0.7 }));
-    merlons.push(...merlonGeos(w + 0.6, x + w / 2, top + h, z, Math.PI / 2, { w: 0.8, h: 0.9, d: 0.8, gap: 0.7 }));
-    merlons.push(...merlonGeos(w + 0.6, x - w / 2, top + h, z, Math.PI / 2, { w: 0.8, h: 0.9, d: 0.8, gap: 0.7 }));
-    const sp = new THREE.ConeGeometry(w * 0.55, spireH, 4, 1);
-    sp.rotateY(Math.PI / 4);
-    sp.translate(x, top + h + spireH / 2, z);
-    spires.push(sp);
-    // Corner pinnacles.
-    for (const [ox, oz] of [
-      [-1, -1],
-      [1, -1],
-      [-1, 1],
-      [1, 1],
-    ]) {
-      const p = new THREE.ConeGeometry(0.45, spireH * 0.35, 4, 1);
-      p.translate(x + (ox * w) / 2, top + h + 0.9 + spireH * 0.175, z + (oz * w) / 2);
-      spires.push(p);
-    }
-    litGrid(x, z + w / 2 + 0.05, w, top + 4, Math.floor(h / 3.4) - 1, Math.max(1, Math.floor(w / 2.6)), 0, 0.6);
-  };
-
-  // Curtain wall facing the bridge, with a gate house in the middle.
-  const wallZ = cz + 40;
-  castleGeos.push(boxGeo(96, 12, 3, 0, top + 6, wallZ));
-  merlons.push(...merlonGeos(96, 0, top + 12, wallZ + 1.2, 0, { w: 0.9, h: 1.0, d: 0.7, gap: 0.8 }));
-  for (const x of [-48, -24, 24, 48]) {
-    const g = new THREE.CylinderGeometry(4, 4.4, 20, 8);
-    scaleUV(g, 2);
-    g.translate(x, top + 10, wallZ);
-    castleGeos.push(g);
-    const sp = new THREE.ConeGeometry(5.2, 10, 8, 1);
-    sp.translate(x, top + 25, wallZ);
-    spires.push(sp);
-    lit.push(quadGeo(0.8, 1.4, x, top + 13, wallZ + 4.45));
-  }
-  // Main palace block with a steep roof.
-  castleGeos.push(boxGeo(46, 24, 26, 0, top + 12, cz + 6));
-  const roofShape = new THREE.Shape();
-  roofShape.moveTo(-14, 0);
-  roofShape.lineTo(14, 0);
-  roofShape.lineTo(0, 13);
-  roofShape.lineTo(-14, 0);
-  const roof = scaleUV(new THREE.ExtrudeGeometry(roofShape, { depth: 47, bevelEnabled: false }), 0.5);
-  roof.translate(0, 0, -23.5);
-  roof.rotateY(Math.PI / 2);
-  roof.translate(0, top + 24, cz + 6);
-  spires.push(roof);
-  litGrid(0, cz + 19.05, 42, top + 5, 5, 12, 0, 0.7);
-  // Great central tower and a crowd of spired towers (like the reference skyline).
-  tower(4, cz + 10, 11, 46, 26);
-  tower(-17, cz + 14, 7, 32, 15);
-  tower(21, cz + 16, 7, 28, 14);
-  tower(-29, cz + 2, 6, 24, 12);
-  tower(31, cz, 7, 36, 17);
-  tower(-8, cz - 6, 8, 40, 20);
-  tower(15, cz - 10, 6, 30, 15);
-  tower(-24, cz - 12, 5, 22, 11);
-  tower(36, cz + 24, 5, 18, 10);
-  tower(-38, cz + 22, 5, 16, 9);
-
-  group.add(mergedMesh(castleGeos, M.castle, { cast: false }));
-  group.add(mergedMesh(merlons, M.castle));
-  group.add(mergedMesh(spires, M.slate));
-  group.add(mergedMesh(lit, M.lit));
-
-  // Fires on the roofs and battlements, washing the stone in amber.
-  const fires = [
-    [-12, top + 24, cz + 19, 6, true],
-    [14, top + 24, cz + 18, 5, false],
-    [4, top + 47, cz + 16, 4, true],
-    [-17, top + 33, cz + 18, 3, false],
-    [21, top + 29, cz + 20, 3, false],
-    [-30, top + 12.5, wallZ + 1, 5, true],
-    [34, top + 12.5, wallZ + 1, 4, false],
-    [0, top + 37, cz + 6, 7, false],
-    [-8, top + 41, cz - 2, 3, false],
-  ];
-  for (const [x, y, z, spread, light] of fires) {
-    const f = fireCluster({ x, y, z, spread, flames: Math.round(spread * 1.8), size: 2.6 + spread * 0.25, light: light ? { intensity: 160, distance: 120, decay: 1.2 } : null });
-    group.add(f.group);
-    animated.push(f);
-  }
-  // Braziers along the curtain wall (steady amber glow).
-  for (const x of [-36, -12, 12, 36]) {
-    const f = fireCluster({ x, y: top + 12.4, z: wallZ + 1.2, spread: 0.6, flames: 2, size: 1.4 });
-    group.add(f.group);
-    animated.push(f);
-  }
-  // Big warm fill lights in front of the facade.
-  for (const [x, y, z] of [
-    [-20, top + 10, wallZ + 14],
-    [22, top + 10, wallZ + 14],
-  ]) {
-    const l = new THREE.PointLight(0xff7a2a, 260, 160, 1.3);
-    l.position.set(x, y, z);
-    group.add(l);
-  }
-  // Smoke rising from the blaze.
-  for (const [x, z, h] of [
-    [-12, cz + 19, 34],
-    [4, cz + 16, 30],
-    [-30, wallZ + 1, 26],
-  ]) {
-    const s = smokeColumn({ x, y: x === 4 ? top + 50 : top + 28, z, height: h, puffs: 14, size: 3.6, sway: 4, speed: 2.4, tint: 0x9a8c9c });
-    group.add(s.group);
-    animated.push(s);
-  }
-  return { group, animated };
-}
-
 export default {
   id: 'bridge',
-  title: 'The Bridge to the Crownkeep',
+  title: 'North River Crossing',
   reference: '03-burning-castle-bridge.png',
-  build: buildBridge,
+  build: buildZone,
 };

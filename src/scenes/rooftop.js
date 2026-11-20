@@ -119,7 +119,7 @@ function buildRooftop() {
   wood.push(boxGeo(0.18, 0.12, 10, -3.3, 1.1, -1.75), boxGeo(0.1, 0.08, 10, -3.3, 0.55, -1.75));
   wood.push(boxGeo(5.4, 0.12, 0.18, -0.7, 1.1, -6.6), boxGeo(5.4, 0.08, 0.1, -0.7, 0.55, -6.6));
   wood.push(boxGeo(5.4, 0.12, 0.18, -0.7, 1.1, 3.1));
-  colliders.push({ minX: -3.8, maxX: -3.1, minZ: -7.2, maxZ: 3.6 }, { minX: -3.8, maxX: 2.2, minZ: -7.2, maxZ: -6.4 }, { minX: -3.8, maxX: 2.2, minZ: 2.9, maxZ: 3.6 });
+  colliders.push({ minX: -3.8, maxX: -3.1, minZ: -7.2, maxZ: 3.6, h: 1.2 }, { minX: -3.8, maxX: 2.2, minZ: -7.2, maxZ: -6.4, h: 1.2 }, { minX: -3.8, maxX: 2.2, minZ: 2.9, maxZ: 3.6, h: 1.2 });
 
   // Overhead beam with a big diagonal strut from the tower (like the reference).
   wood.push(boxGeo(5.6, 0.3, 0.3, -0.6, 3.6, -3.4));
@@ -182,7 +182,7 @@ function buildRooftop() {
   const shelfMesh = mergedMesh(shelf, M.wood, { cast: true });
   root.add(shelfMesh);
   cameraBlockers.push(shelfMesh);
-  colliders.push({ minX: 1.1, maxX: 2.1, minZ: -5.8, maxZ: -1.8 });
+  colliders.push({ minX: 1.1, maxX: 2.1, minZ: -5.8, maxZ: -1.8, h: 2.7 });
   const rnd = mulberry(4);
   const shapes = ['flask', 'tall', 'round'];
   for (const y of [0.09, 0.89, 1.69]) {
@@ -198,7 +198,7 @@ function buildRooftop() {
 
   // ---- Workbench with an amber lantern and big glowing flasks (foreground) -----
   root.add(box(1.3, 0.9, 1.6, M.wood, 1.2, 0.45, 0.2, 1));
-  colliders.push({ minX: 0.5, maxX: 2, minZ: -0.7, maxZ: 1.1 });
+  colliders.push({ minX: 0.5, maxX: 2, minZ: -0.7, maxZ: 1.1, h: 1.6 });
   const lantern = new THREE.Group();
   lantern.position.set(1.15, 0.9, 0.6);
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.42), M.pane);
@@ -227,7 +227,7 @@ function buildRooftop() {
   const alch = createAlchemist();
   alch.root.position.set(-1.6, 0, -5.7);
   root.add(alch.root);
-  colliders.push({ minX: -2.0, maxX: -1.2, minZ: -6.2, maxZ: -5.2 });
+  colliders.push({ minX: -2.0, maxX: -1.2, minZ: -6.2, maxZ: -5.2, h: 2 });
   animated.push({ update: (dt, t) => alch.update(dt, t) });
 
   // ---- The town far below ---------------------------------------------------------

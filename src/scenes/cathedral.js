@@ -350,7 +350,7 @@ function buildCathedral() {
   root.add(box(L + 0.2, 0.14, 0.5, M.darkStone, 0, 1.07, -2.45, 1));
   cameraBlockers.push(balMesh);
   colliders.push(
-    { minX: -NAVE - 1, maxX: NAVE + 1, minZ: -3, maxZ: -2.2 },
+    { minX: -NAVE - 1, maxX: NAVE + 1, minZ: -3, maxZ: -2.2, h: 1.2 },
     { minX: -NAVE - 2, maxX: -NAVE + 0.3, minZ: -3, maxZ: WEST + 1 },
     { minX: NAVE - 0.3, maxX: NAVE + 2, minZ: -3, maxZ: WEST + 1 },
     { minX: -NAVE - 2, maxX: NAVE + 2, minZ: WEST - 0.2, maxZ: WEST + 2 },

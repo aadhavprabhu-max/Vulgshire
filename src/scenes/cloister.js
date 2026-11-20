@@ -300,7 +300,7 @@ function buildCloister() {
     root.add(box(w, ch, ct, M.darkStone, (x0 + x1) / 2, ch / 2, z1, 1));
     root.add(box(ct, ch, d, M.darkStone, x0, ch / 2, (z0 + z1) / 2, 1));
     root.add(box(ct, ch, d, M.darkStone, x1, ch / 2, (z0 + z1) / 2, 1));
-    colliders.push({ minX: x0 - 0.05, maxX: x1 + 0.05, minZ: z0 - 0.05, maxZ: z1 + 0.05 });
+    colliders.push({ minX: x0 - 0.05, maxX: x1 + 0.05, minZ: z0 - 0.05, maxZ: z1 + 0.05, h: 1 });
     const area = w * d;
     for (let i = 0; i < area * 2.6; i++) {
       const p = [x0 + 0.15 + rnd() * (w - 0.3), z0 + 0.15 + rnd() * (d - 0.3)];
