@@ -4,8 +4,8 @@ Every asset used so far is **original and generated in code**. There are no down
 
 | Asset | Source | Licence |
 |---|---|---|
-| Stone, flagstone, slate, wood, grass, cloth, statue, sky, moon, flower, flame and lantern textures | Drawn procedurally on small canvases in `src/retro/textures.js` | Original, part of this project |
-| Cloister architecture, monk, statue, lantern | Built from Three.js primitives in `src/scenes/` and `src/player/` | Original, part of this project |
+| All textures: stone, castle stone, flagstone, cobbles, slate, roof tiles, plaster, wood, grass, cloth, striped robe, armour, statue, water, skies (night, storm, overcast), moon, flowers, flame, smoke, mist, light shaft, stained glass, rose windows, banner, windows, lantern | Drawn procedurally on small canvases in `src/retro/textures.js` | Original, part of this project |
+| All architecture, the town, the castle, the monk, guards, alchemist, statue, props | Built from Three.js primitives in `src/scenes/`, `src/player/` and `src/characters/` | Original, part of this project |
 
 Libraries: [three.js](https://threejs.org) (MIT), [Vite](https://vitejs.dev) (MIT).
 

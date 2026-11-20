@@ -1,6 +1,6 @@
 # VULGSHIRE — project brief for Claude Code
 
-A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". Milestone 1 (the moonlit cloister) is built and waiting for the "yes, that's the vibe" sign-off.
+A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". All four reference scenes have a first pass (cloister, rooftop, bridge, cathedral). They're waiting for the user's feedback.
 
 ## How to work with me
 
@@ -26,6 +26,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 - `npm install` once, then `npm run dev` and open the printed URL.
 - Controls: click to lock the mouse and look around, **WASD** or arrow keys to move, **Shift** to run, **Q/E** to turn.
+- Scenes: **[** and **]** switch between the four scenes, or open one directly with `?scene=cloister|rooftop|bridge|cathedral`.
 - Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD. These are number keys because browsers reserve most F-keys.
 - URL flags: `?res=0|1|2&jitter=1&fog=0&dither=0&grade=0`, `&shot=1` (hides the HUD), `&pose=x,z,yaw,pitch` (debug camera pose).
 - Progress screenshots: `node tools/screenshot.mjs screenshots/progress/NNN-name.png ["query"]` renders headless at 640x360. It needs Playwright; in the cloud container it uses the preinstalled global copy.
@@ -34,7 +35,12 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 - `src/main.js`: scene setup, lights, settings keys, main loop.
 - `src/retro/`: `RetroRenderer.js` (low-res target, nearest upscale, letterbox, dither, colour grade), `retroMaterial.js` (vertex jitter shader patch), `textures.js` (all procedural textures).
-- `src/scenes/cloister.js`: the cloister scene, its colliders and the sky and moon.
+- `src/scenes/index.js`: the scene registry. Each scene module exports `{ id, title, reference, build() }`. `build()` returns `{ root, sky, colliders, cameraBlockers, spawn, spawnYaw, spawnPitch, env: { fog, hemi, dir }, update(dt, t) }`.
+- `src/scenes/kit.js`: shared building blocks (pointed arches, world-UV boxes, roofs, spires, merlons, torches, sky dome, geometry merging).
+- `src/scenes/town.js`: procedural town (half-timbered houses, gable roofs, lit and dark windows, church spires), merged into a few meshes.
+- `src/scenes/fx.js`: blocky smoke columns, ember particles, roof fires.
+- `src/scenes/cloister.js` (ref 01), `rooftop.js` (ref 02), `bridge.js` (ref 03), `cathedral.js` (ref 04).
+- `src/characters/`: NPCs: `guard.js` (horned helm, spear) and `alchemist.js` (green striped robe).
 - `src/player/`: `monk.js` (model, lantern, animation), `controller.js` (third-person camera, movement, collision).
 - `src/data/world.js`: world names, map positions and the three-rivers rule check (`validateWorld`).
 - `src/ui/hud.js`: the small iron-framed HUD.
@@ -44,6 +50,16 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - Lights: a navy hemisphere light, a cold directional moonlight with a hard 1024 px `BasicShadowMap`, and warm point lights for the lantern and wall torches.
 - Surfaces under the walkway roof use darker "baked" materials (`stoneShade`, `floorShade`) because the hemisphere light can't be occluded. This keeps the arches reading as dark openings, like in the reference.
 - Glowing flowers are unlit `MeshBasicMaterial` crossed quads (instanced).
+- Glowing things (lit windows, potions, stained glass, flames) use unlit `MeshBasicMaterial`. Real point lights are kept few: the bridge lights only every other post torch.
+- Big skylines (town, castle) are merged into a few meshes. The Crownkeep is built at map scale and then scaled up by 1.45 around the hill top so it dominates the view.
+
+## Scene placement on the map
+
+- **Bridge (ref 03):** the stone bridge over the NORTH river, just west of the Crownkeep. This comes from the final map. The monk walks toward the keep; the river flows south into the lake.
+- **Cathedral (ref 04):** the Great Cathedral beside the Crownkeep. The view is from the west gallery.
+- **Cloister (ref 01):** not placed yet. Proposal: the Great Cathedral's cloister.
+- **Rooftop (ref 02):** not placed yet. Proposal: a tower in the Old Town looking across the lake.
+- **The burning castle** in ref 03 is shown because the reference shows it. Why it burns (if it ever does in the story) is **undecided lore**.
 
 ## Notes on the references
 
