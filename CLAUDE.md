@@ -158,4 +158,19 @@ Source of truth for the layout is `reference/maps/vulgshire-topdown-FINAL.png`. 
 
 ## Ideas for later (don't start without asking)
 
+### Underground metro (after the whole city is built)
+
+- The owner drew the network in `reference/maps/vulgshire-metro-lines.png` (on the final map). Its style is undecided (ancient ruin rail, alchemist-powered, or crypt carts); keep it fantasy, not industrial.
+- **The hub:** every line meets on the north-west lake shore, next to where the north river enters the lake.
+- **Purple:** north wall to the hub.
+- **Orange:** hub, along the north shore, then a loop up around the Great Cathedral whose top stop is the **Crownkeep entrance**, then down to the Merchants' Quarter.
+- **Black:** Merchants' Quarter, down the east side past the Eastern Bazaar, to the south-east.
+- **Dark blue:** hub, **under the lake**, to the Eastern Bazaar.
+- **Cyan:** hub, **under the lake**, to the island fortress.
+- **Light blue:** hub, the Docks, toward the Western Gates.
+- **Green:** a Docks branch into the west Old Town.
+- **Red:** hub, down the west shore, Old Town, then south into the Southern District.
+- **Yellow:** a crosstown line along the south shore, joining Black in the south-east.
+- Stations would be zones joined by the existing portal and fade system.
+
 Build one small area first and get the retro look right: the moonlit cloister or the cathedral interior. Then grow outward, using the final map so each district becomes its own zone.
