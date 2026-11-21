@@ -105,7 +105,7 @@ function pyramidGeo(w, d, rise) {
   return scaleUV(g, 3);
 }
 
-export const ARCHETYPES = ['gable', 'stepped', 'long', 'jetty', 'hip', 'tower', 'shop'];
+export const ARCHETYPES = ['gable', 'stepped', 'long', 'jetty', 'hip', 'tower', 'shop', 'arcade', 'turret', 'baroque'];
 
 export class BuildingSet {
   /** detail: 'high' (walkable streets) or 'low' (distant skylines). */
@@ -113,6 +113,7 @@ export class BuildingSet {
     this.rnd = mulberry(seed);
     this.litChance = litChance;
     this.high = detail === 'high';
+    this.min = detail === 'min'; // far LOD: shells, roofs and lit windows only
     this.buckets = {};
     this.colliders = [];
   }
@@ -126,14 +127,26 @@ export class BuildingSet {
    * @param {{x:number,z:number,y?:number,rot?:number,w:number,d:number,type?:string,collide?:boolean}} lot
    */
   add(lot) {
-    const r = this.rnd;
+    // Per-lot random streams, so near and far versions of a house match:
+    // `r` decides shape and colour, `rd` decides the small details.
+    const r = lot.seed !== undefined ? mulberry(lot.seed) : this.rnd;
+    const rd = lot.seed !== undefined ? mulberry(lot.seed * 7 + 13) : this.rnd;
+    const pick = (list) => list[Math.floor(r() * list.length)];
     const hi = this.high;
+    const minimal = this.min;
     const { x, z, w, d } = lot;
     const y = lot.y ?? 0;
     const rot = lot.rot ?? 0;
-    const type = lot.type || this.pick(ARCHETYPES);
+    const type = lot.type || pick(ARCHETYPES);
     const M = new THREE.Matrix4().makeRotationY(rot).setPosition(x, y, z);
+    // Far LOD: collapse everything into four materials (walls, stone, roofs, lights).
+    const MIN_KEY = { plaster: 'plaster', timber: 'plaster', timber2: 'plaster', timber3: 'plaster', roof: 'roof', slate: 'roof', lit: 'lit' };
     const put = (key, geo, color) => {
+      if (this.min) {
+        key = MIN_KEY[key] || 'stone';
+        if (key !== 'lit' && color === undefined) color = key === 'stone' ? 0x6a5a4a : 0xffffff;
+        if (key === 'roof' && color !== undefined && !geo.userData.slate) color = color;
+      }
       if (color !== undefined) tint(geo, color);
       geo.applyMatrix4(M);
       (this.buckets[key] ||= []).push(geo);
@@ -157,10 +170,10 @@ export class BuildingSet {
       g.translate(qx, qy, qz);
       put(key, g);
     };
-    const shutterTint = this.pick(SHUTTER);
-    const trimTint = this.pick(TRIM);
-    const shutters = hi && r() < 0.55;
-    const boxes = hi && r() < 0.3;
+    const shutterTint = pick(SHUTTER);
+    const trimTint = pick(TRIM);
+    const shutters = rd() < 0.55 && hi;
+    const boxes = rd() < 0.3 && hi;
 
     // Windows on the four faces, one row per storey, with stone sills and
     // lintels, painted shutters (some open, some closed) and flower boxes.
@@ -177,11 +190,14 @@ export class BuildingSet {
         for (let f = 0; f < floors; f++) {
           if (skipGroundFront && f === 0 && a === 0) continue;
           for (let i = 0; i < n; i++) {
-            if (r() < 0.2) continue;
+            if (rd() < 0.2) continue;
             const u = -span / 2 + (span / n) * (i + 0.5);
             const wy = y0 + 1.7 + f * 3;
-            const closed = shutters && r() < 0.2;
-            if (!closed) quad(r() < lit ? 'lit' : 'unlit', ww, wh, Math.sin(a) * (off + 0.03) + Math.cos(a) * u, wy, Math.cos(a) * (off + 0.03) - Math.sin(a) * u, a);
+            const closed = rd() < 0.2 && shutters;
+            const isLit = rd() < lit;
+            const flower = rd() < 0.5;
+            if (!closed && (isLit || !minimal)) quad(isLit ? 'lit' : 'unlit', ww, wh, Math.sin(a) * (off + 0.03) + Math.cos(a) * u, wy, Math.cos(a) * (off + 0.03) - Math.sin(a) * u, a);
+            if (minimal) continue;
             if (!hi) {
               faceBox('trim', ww + 0.2, 0.1, 0.16, a, u, off + 0.06, wy - wh / 2 - 0.05, trimTint);
               continue;
@@ -196,7 +212,7 @@ export class BuildingSet {
               if (closed) faceBox('shutter', ww + 0.04, wh, 0.05, a, u, off + 0.05, wy, shutterTint);
               else for (const sd of [-1, 1]) faceBox('shutter', ww / 2, wh, 0.04, a, u + sd * (ww * 0.75 + 0.1), off + 0.04, wy, shutterTint);
             }
-            if (boxes && f > 0 && r() < 0.5) {
+            if (boxes && f > 0 && flower) {
               faceBox('wood', ww + 0.1, 0.18, 0.22, a, u, off + 0.18, wy - wh / 2 - 0.2, 0xffffff);
               faceBox('flowers', ww, 0.12, 0.2, a, u, off + 0.2, wy - wh / 2 - 0.05, 0xffffff);
             }
@@ -213,7 +229,7 @@ export class BuildingSet {
         box('trim', 0.18, 2.3, 0.16, dx - dw / 2 - 0.09, 1.15, bd / 2 + 0.05, trimTint, 1); // jambs
         box('trim', 0.18, 2.3, 0.16, dx + dw / 2 + 0.09, 1.15, bd / 2 + 0.05, trimTint, 1);
         box('trim', dw + 0.6, 0.16, 0.5, dx, 0.08, bd / 2 + 0.25, trimTint, 1); // step
-        if (r() < 0.3) {
+        if (rd() < 0.3) {
           // A small lantern beside the door.
           box('dark', 0.05, 0.05, 0.3, dx + dw / 2 + 0.45, 2.45, bd / 2 + 0.15, 0xffffff, 1);
           box('lit', 0.18, 0.26, 0.18, dx + dw / 2 + 0.45, 2.25, bd / 2 + 0.3);
@@ -222,7 +238,7 @@ export class BuildingSet {
       return dx;
     };
     const chimney = (cx, cy, cz) => {
-      box('dark', 0.6, 1.8, 0.6, cx, cy, cz, this.pick(STONE), 1);
+      box('dark', 0.6, 1.8, 0.6, cx, cy, cz, pick(STONE), 1);
       if (hi) box('trim', 0.75, 0.15, 0.75, cx, cy + 0.95, cz, 0xb0a8a0, 1);
       if (hi) {
         const pot = new THREE.CylinderGeometry(0.12, 0.15, 0.45, 6);
@@ -233,7 +249,7 @@ export class BuildingSet {
     // Stone plinth (base course) and front corner quoins.
     const plinth = (bw, bd, hh = 0.55) => box('trim', bw + 0.16, hh, bd + 0.16, 0, hh / 2, 0, trimTint, 1);
     const quoins = (bw, bd, h) => {
-      if (!hi || r() > 0.4) return;
+      if (rd() > 0.4 || !hi) return;
       for (const sx of [-1, 1]) {
         for (let yy = 0.6, k = 0; yy < h - 0.3; yy += 0.55, k++) {
           const long = k % 2 === 0;
@@ -243,7 +259,7 @@ export class BuildingSet {
       }
     };
     const stringCourses = (bw, bd, h) => {
-      if (!hi || r() > 0.45) return;
+      if (rd() > 0.45 || !hi) return;
       for (let yy = 3; yy < h - 1; yy += 3) box('trim', bw + 0.14, 0.14, bd + 0.14, 0, yy, 0, trimTint, 1);
     };
     const ridge = (len, alongZ, top) => {
@@ -253,10 +269,10 @@ export class BuildingSet {
     };
     // A projecting bay (oriel) window on the upper floor, with its own little roof.
     const oriel = (bw, bd, yb) => {
-      if (!hi || bw < 6 || r() > 0.2) return;
+      if (rd() > 0.2 || !hi || bw < 6) return;
       const ow = 1.9;
       const od = 0.75;
-      box('plaster', ow, 2.2, od, 0, yb + 1.1, bd / 2 + od / 2, this.pick(PLASTER));
+      box('plaster', ow, 2.2, od, 0, yb + 1.1, bd / 2 + od / 2, pick(PLASTER));
       const cor = new THREE.ConeGeometry(0.75, 0.9, 4, 1);
       cor.rotateY(Math.PI / 4);
       cor.rotateX(Math.PI);
@@ -265,13 +281,13 @@ export class BuildingSet {
       put('trim', cor, trimTint);
       const rf = pyramidGeo(ow - 0.4, od, 0.8);
       rf.translate(0, yb + 2.2, bd / 2 + od / 2);
-      put('slate', rf, this.pick(SLATE));
-      quad(r() < this.litChance + 0.15 ? 'lit' : 'unlit', 0.7, 1.1, 0, yb + 1.1, bd / 2 + od + 0.02, 0);
-      for (const sd of [-1, 1]) quad(r() < this.litChance ? 'lit' : 'unlit', 0.4, 1.0, sd * (ow / 2 + 0.02), yb + 1.1, bd / 2 + od / 2, sd * Math.PI / 2);
+      put('slate', rf, pick(SLATE));
+      quad(rd() < this.litChance + 0.15 ? 'lit' : 'unlit', 0.7, 1.1, 0, yb + 1.1, bd / 2 + od + 0.02, 0);
+      for (const sd of [-1, 1]) quad(rd() < this.litChance ? 'lit' : 'unlit', 0.4, 1.0, sd * (ow / 2 + 0.02), yb + 1.1, bd / 2 + od / 2, sd * Math.PI / 2);
     };
     // A wooden balcony on the first floor.
     const balcony = (bw, bd, yb) => {
-      if (!hi || bw < 6 || r() > 0.18) return;
+      if (rd() > 0.18 || !hi || bw < 6) return;
       const bwid = Math.min(3.2, bw * 0.5);
       box('wood', bwid, 0.15, 0.8, 0, yb, bd / 2 + 0.4, 0xffffff, 1);
       box('wood', bwid, 0.08, 0.08, 0, yb + 0.95, bd / 2 + 0.78, 0xffffff, 1);
@@ -285,11 +301,11 @@ export class BuildingSet {
     };
     const wallKind = (base) => {
       if (base !== 'plaster' || r() > 0.38) return base;
-      return this.pick(['timber', 'timber2', 'timber3']);
+      return pick(['timber', 'timber2', 'timber3']);
     };
     const roofKey = r() < 0.72 ? 'roof' : 'slate';
-    const roofTint = roofKey === 'roof' ? this.pick(ROOF) : this.pick(SLATE);
-    const wall = this.pick(PLASTER);
+    const roofTint = roofKey === 'roof' ? pick(ROOF) : pick(SLATE);
+    const wall = pick(PLASTER);
 
     let h = 0;
     switch (type) {
@@ -298,7 +314,7 @@ export class BuildingSet {
         h = 6.5 + r() * 5;
         const wk = type === 'stepped' ? 'plaster' : wallKind('plaster');
         const timber = wk !== 'plaster';
-        box(wk, w, h, d, 0, h / 2, 0, timber ? this.pick(TIMBER) : wall, 3);
+        box(wk, w, h, d, 0, h / 2, 0, timber ? pick(TIMBER) : wall, 3);
         plinth(w, d, timber ? 0.9 : 0.55);
         if (!timber) quoins(w, d, h);
         if (!timber) stringCourses(w, d, h);
@@ -326,7 +342,7 @@ export class BuildingSet {
         h = 5.5 + r() * 3.5;
         const wk = wallKind('plaster');
         const timber = wk !== 'plaster';
-        box(wk, w, h, d, 0, h / 2, 0, timber ? this.pick(TIMBER) : wall, 3);
+        box(wk, w, h, d, 0, h / 2, 0, timber ? pick(TIMBER) : wall, 3);
         plinth(w, d, timber ? 0.9 : 0.55);
         if (!timber) quoins(w, d, h);
         const rise = d * (0.42 + r() * 0.15);
@@ -355,9 +371,9 @@ export class BuildingSet {
         const g2 = 3 + r() * 3.5;
         h = g1 + g2;
         const stoneGround = r() < 0.5;
-        box(stoneGround ? 'stone' : 'plaster', w, g1, d, 0, g1 / 2, 0, stoneGround ? this.pick(STONE) : wall, 3);
+        box(stoneGround ? 'stone' : 'plaster', w, g1, d, 0, g1 / 2, 0, stoneGround ? pick(STONE) : wall, 3);
         // Upper floors overhang the street (jettied), half-timbered, on carved brackets.
-        box(this.pick(['timber', 'timber2', 'timber3']), w + 0.5, g2, d + 0.7, 0, g1 + g2 / 2, 0.25, this.pick(TIMBER), 3);
+        box(pick(['timber', 'timber2', 'timber3']), w + 0.5, g2, d + 0.7, 0, g1 + g2 / 2, 0.25, pick(TIMBER), 3);
         box('wood', w + 0.6, 0.25, d + 0.8, 0, g1, 0.25, 0xffffff, 1);
         if (hi) {
           for (let bx = -w / 2 + 0.4; bx <= w / 2 - 0.3; bx += 1.1) {
@@ -385,7 +401,7 @@ export class BuildingSet {
       case 'hip': {
         h = 7 + r() * 4;
         const stoneBase = r() < 0.5;
-        box(stoneBase ? 'stone' : 'plaster', w, h, d, 0, h / 2, 0, stoneBase ? this.pick(STONE) : wall, 3);
+        box(stoneBase ? 'stone' : 'plaster', w, h, d, 0, h / 2, 0, stoneBase ? pick(STONE) : wall, 3);
         plinth(w, d);
         if (!stoneBase) {
           quoins(w, d, h);
@@ -404,7 +420,7 @@ export class BuildingSet {
       }
       case 'tower': {
         h = 12 + r() * 7;
-        box('stone', w, h, d, 0, h / 2, 0, this.pick(STONE), 3);
+        box('stone', w, h, d, 0, h / 2, 0, pick(STONE), 3);
         box('dark', w + 0.4, 0.5, d + 0.4, 0, h, 0, 0xffffff, 1);
         if (hi) {
           // Machicolation-like corbel band under the roof.
@@ -416,7 +432,7 @@ export class BuildingSet {
         }
         const pg = pyramidGeo(w, d, 4 + r() * 5);
         pg.translate(0, h + 0.25, 0);
-        put('slate', pg, this.pick(SLATE));
+        put('slate', pg, pick(SLATE));
         windows(w, d, 0, h, { ww: 0.5, wh: 1.1, lit: this.litChance * 0.7, skipGroundFront: true });
         door(w, d);
         break;
@@ -425,7 +441,7 @@ export class BuildingSet {
         h = 6 + r() * 4;
         const wk = wallKind('plaster');
         const timber = wk !== 'plaster';
-        box(wk, w, h, d, 0, h / 2, 0, timber ? this.pick(TIMBER) : wall, 3);
+        box(wk, w, h, d, 0, h / 2, 0, timber ? pick(TIMBER) : wall, 3);
         plinth(w, d, timber ? 0.9 : 0.55);
         const alongZ = r() < 0.5;
         const rise = (alongZ ? w : d) * 0.55;
@@ -439,31 +455,119 @@ export class BuildingSet {
           box('wood', 0.12, 1.4, 0.12, -w * 0.22 - w * 0.175 - 0.06, 1.5, d / 2 + 0.06, 0xffffff, 1);
           box('wood', 0.12, 1.4, 0.12, -w * 0.22 + w * 0.175 + 0.06, 1.5, d / 2 + 0.06, 0xffffff, 1);
           box('dark', 0.06, 0.06, 1.1, w / 2 - 0.6, 3.6, d / 2 + 0.55, 0xffffff, 1);
-          box('shutter', 0.06, 0.6, 0.8, w / 2 - 0.6, 3.1, d / 2 + 0.75, this.pick(AWNING), 1);
+          box('shutter', 0.06, 0.6, 0.8, w / 2 - 0.6, 3.1, d / 2 + 0.75, pick(AWNING), 1);
         }
         quad('door', 1.6, 2.2, w * 0.25, 1.1, d / 2 + 0.04, 0);
         const aw = new THREE.PlaneGeometry(w * 0.9, 1.8);
         scaleUV(aw, 2);
         aw.rotateX(-Math.PI / 2 + 0.45);
         aw.translate(0, 2.9, d / 2 + 0.8);
-        put('cloth', aw, this.pick(AWNING));
+        put('cloth', aw, pick(AWNING));
         windows(w, d, 0, h, { skipGroundFront: true, trim: !timber });
         if (r() < 0.5) chimney(-w * 0.25, h + rise * 0.5, 0);
+        break;
+      }
+      case 'arcade': {
+        // Arcaded ground floor (a covered walk behind stone arches), plaster above.
+        h = 8 + r() * 4;
+        const deep = 1.6;
+        box('plaster', w, h - 3.4, d, 0, 3.4 + (h - 3.4) / 2, 0, wall, 3);
+        box('stone', w, 3.4, d - deep, 0, 1.7, -deep / 2, pick(STONE), 3);
+        box('trim', w + 0.1, 0.5, deep, 0, 3.15, d / 2 - deep / 2, trimTint, 1);
+        const nArch = Math.max(2, Math.round(w / 2.4));
+        for (let k = 0; k <= nArch; k++) box('trim', 0.45, 2.9, 0.45, -w / 2 + 0.22 + ((w - 0.44) * k) / nArch, 1.45, d / 2 - 0.22, trimTint, 1);
+        if (!minimal) for (let k = 0; k < nArch; k++) quad(rd() < 0.5 ? 'lit' : 'unlit', 0.9, 1.3, -w / 2 + ((w * (k + 0.5)) / nArch), 1.6, d / 2 - deep + 0.03, 0);
+        quad('door', 1.1, 2.1, 0, 1.05, d / 2 - deep + 0.04, 0);
+        plinth(w, d, 0.3);
+        stringCourses(w, d, h);
+        const rise = w * (0.5 + r() * 0.2);
+        put(roofKey, gableGeo(d, w, rise, true).translate(0, h, 0), roofTint);
+        ridge(d, true, h + rise);
+        windows(w, d, 3.4, h - 3.4);
+        if (r() < 0.6) chimney(-w * 0.25, h + rise * 0.5, -d * 0.2);
+        break;
+      }
+      case 'turret': {
+        // A townhouse with a round corner turret and a tall conical cap.
+        h = 8 + r() * 4;
+        const wk = wallKind('plaster');
+        const timber = wk !== 'plaster';
+        box(wk, w, h, d, 0, h / 2, 0, timber ? pick(TIMBER) : wall, 3);
+        plinth(w, d, timber ? 0.9 : 0.55);
+        const rise = d * (0.45 + r() * 0.15);
+        put(roofKey, gableGeo(w, d, rise, false).translate(0, h, 0), roofTint);
+        ridge(w, false, h + rise);
+        const side = r() < 0.5 ? -1 : 1;
+        const tr = 1.3;
+        const tx = side * (w / 2);
+        const tz = d / 2;
+        const tw = new THREE.CylinderGeometry(tr, tr, h - 3, 8);
+        tw.translate(tx, 3 + (h - 3) / 2, tz);
+        put('plaster', scaleUV(tw, 1.5), timber ? 0xe8e0d0 : wall);
+        const cor = new THREE.ConeGeometry(tr, 1.6, 8);
+        cor.rotateX(Math.PI);
+        cor.translate(tx, 2.2, tz);
+        put('trim', cor, trimTint);
+        const cap = new THREE.ConeGeometry(tr + 0.25, 4.5, 8);
+        cap.translate(tx, h + 2.25, tz);
+        put('slate', scaleUV(cap, 2), pick(SLATE));
+        if (hi) box('dark', 0.08, 1.2, 0.08, tx, h + 5, tz, 0xffffff, 1);
+        for (let k = 0; k < Math.floor((h - 3) / 3); k++) quad(rd() < this.litChance ? 'lit' : 'unlit', 0.45, 0.9, tx + side * 0.2, 4.8 + k * 3, tz + tr + 0.02, 0);
+        windows(w, d, 0, h, { skipGroundFront: true, trim: !timber });
+        door(w, d);
+        if (r() < 0.6) chimney(-side * w * 0.25, h + rise * 0.5, 0);
+        break;
+      }
+      case 'baroque': {
+        // Prague-style decorated gable: pilasters, cornices and a scrolled, stepped top.
+        h = 9 + r() * 4;
+        box('plaster', w, h, d, 0, h / 2, 0, wall, 3);
+        plinth(w, d, 0.7);
+        const rise = w * 0.6;
+        put(roofKey, gableGeo(d, w, rise, true).translate(0, h, 0), roofTint);
+        ridge(d, true, h + rise);
+        box('trim', w + 0.3, 0.3, 0.5, 0, h - 0.1, d / 2 - 0.1, trimTint, 1); // main cornice
+        if (hi) for (const ux of [-w / 2 + 0.2, -w / 6, w / 6, w / 2 - 0.2]) box('trim', 0.3, h - 0.8, 0.12, ux, (h - 0.8) / 2 + 0.5, d / 2 + 0.06, trimTint, 1); // pilasters
+        // Two-tier gable with curved shoulders and a little pediment.
+        const g1 = w * 0.75;
+        box('plaster', g1, rise * 0.45, 0.5, 0, h + rise * 0.22, d / 2 - 0.2, wall);
+        box('trim', g1 + 0.2, 0.18, 0.6, 0, h + rise * 0.45, d / 2 - 0.2, trimTint, 1);
+        const g2 = w * 0.4;
+        box('plaster', g2, rise * 0.35, 0.5, 0, h + rise * 0.62, d / 2 - 0.2, wall);
+        const ped = new THREE.ConeGeometry(g2 * 0.7, rise * 0.25, 3);
+        ped.rotateZ(0);
+        ped.scale(1, 1, 0.3);
+        ped.translate(0, h + rise * 0.92, d / 2 - 0.2);
+        put('trim', ped, trimTint);
+        if (hi) {
+          for (const sd of [-1, 1]) {
+            // Volutes (scrolls) on the gable shoulders, and stone urns.
+            const v = new THREE.TorusGeometry(0.35, 0.12, 4, 8, Math.PI * 1.5);
+            v.translate(sd * (g1 / 2 - 0.1), h + rise * 0.5, d / 2 - 0.05);
+            put('trim', v, trimTint);
+            const urn = new THREE.CylinderGeometry(0.12, 0.2, 0.5, 6);
+            urn.translate(sd * (g1 / 2 + 0.2), h + rise * 0.45 + 0.35, d / 2 - 0.2);
+            put('trim', urn, trimTint);
+          }
+        }
+        quad(rd() < this.litChance + 0.2 ? 'lit' : 'unlit', 0.8, 1.1, 0, h + rise * 0.25, d / 2 + 0.06, 0);
+        windows(w, d, 0, h, { skipGroundFront: true });
+        door(w, d, true);
         break;
       }
       case 'church': {
         h = 10 + r() * 3;
         const nl = d * 0.75;
-        box('stone', w * 0.7, h, nl, -w * 0.12, h / 2, -d * 0.12, this.pick(STONE));
+        box('stone', w * 0.7, h, nl, -w * 0.12, h / 2, -d * 0.12, pick(STONE));
         const rg = gableGeo(nl, w * 0.7, w * 0.45, true);
         rg.translate(-w * 0.12, h, -d * 0.12);
-        put('slate', rg, this.pick(SLATE));
+        put('slate', rg, pick(SLATE));
         const tw = Math.min(5, w * 0.3);
         const th = h * 2.2;
-        box('stone', tw, th, tw, w * 0.3, th / 2, d / 2 - tw / 2 - 0.3, this.pick(STONE));
+        box('stone', tw, th, tw, w * 0.3, th / 2, d / 2 - tw / 2 - 0.3, pick(STONE));
         const sg = pyramidGeo(tw, tw, th * 0.6);
         sg.translate(w * 0.3, th, d / 2 - tw / 2 - 0.3);
-        put('slate', sg, this.pick(SLATE));
+        put('slate', sg, pick(SLATE));
         if (hi) for (let k = 0; k < 4; k++) box('trim', 0.5, h * 0.8, 0.6, -w * 0.12 + w * 0.35 + 0.2, h * 0.4, -d * 0.12 - nl / 2 + nl * (k / 3), trimTint, 1); // buttresses
         for (let i = 0; i < 4; i++) quad('lit', 0.8, 2.4, -w * 0.12 + w * 0.35 + 0.03, 4 + (i % 2) * 0.2, -d * 0.12 - nl / 2 + nl * ((i + 0.5) / 4), Math.PI / 2);
         quad('door', 1.6, 2.6, w * 0.3, 1.3, d / 2 - 0.27, 0);

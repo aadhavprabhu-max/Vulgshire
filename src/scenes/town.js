@@ -101,14 +101,36 @@ function overlaps(a, b) {
 export function lotsAlongStreets({ seed, streets, blocked = () => false, infillBounds = null, infillCount = 0, churchChance = 0.03, towerBias = 0.08 }) {
   const rnd = mulberry(seed);
   const lots = [];
+  // Spatial hash so thousands of lots can be checked quickly.
+  const GRID = 24;
+  const grid = new Map();
+  const cellsOf = (l) => {
+    const r = Math.hypot(l.w, l.d) / 2 + 0.5;
+    const out = [];
+    for (let gx = Math.floor((l.x - r) / GRID); gx <= Math.floor((l.x + r) / GRID); gx++)
+      for (let gz = Math.floor((l.z - r) / GRID); gz <= Math.floor((l.z + r) / GRID); gz++) out.push(gx * 7919 + gz);
+    return out;
+  };
+  const neighbours = (l) => {
+    const set = new Set();
+    for (const k of cellsOf(l)) for (const o of grid.get(k) || []) set.add(o);
+    return set;
+  };
+  // Only streets passing near a lot matter for it.
+  const nearStreets = (l) => streets.filter((s) => distToStreet(l.x, l.z, s) < s.halfWidth + Math.hypot(l.w, l.d));
   const clearOfStreets = (lot) =>
-    corners(lot).concat([[lot.x, lot.z]]).every(([cx, cz]) => streets.every((s) => distToStreet(cx, cz, s) > s.halfWidth + 0.3));
+    ((ns) => corners(lot).concat([[lot.x, lot.z]]).every(([cx, cz]) => ns.every((s) => distToStreet(cx, cz, s) > s.halfWidth + 0.3)))(nearStreets(lot));
   const tryLot = (lot) => {
     if (blocked(lot.x, lot.z, Math.max(lot.w, lot.d) * 0.55)) return false;
     if (corners(lot).some(([cx, cz]) => blocked(cx, cz, 0))) return false;
     if (!clearOfStreets(lot)) return false;
-    if (lots.some((o) => overlaps(o, lot))) return false;
+    for (const o of neighbours(lot)) if (overlaps(o, lot)) return false;
+    lot.seed = 1 + lots.length * 31 + seed;
     lots.push(lot);
+    for (const k of cellsOf(lot)) {
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(lot);
+    }
     return true;
   };
 
@@ -138,11 +160,10 @@ export function lotsAlongStreets({ seed, streets, blocked = () => false, infillB
   }
   if (infillBounds) {
     const [x0, x1, z0, z1] = infillBounds;
-    for (let i = 0; i < infillCount * 6 && i < 100000; i++) {
+    for (let i = 0; i < infillCount; i++) {
       const w = 6 + rnd() * 5;
       const d = 6 + rnd() * 6;
       tryLot({ x: x0 + rnd() * (x1 - x0), z: z0 + rnd() * (z1 - z0), w, d, rot: rnd() * Math.PI, type: pickType(rnd, 0, towerBias) });
-      if (lots.length > infillCount * 4) break;
     }
   }
   return lots;
@@ -179,4 +200,34 @@ export function streetGeometry(s, y = 0.02) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.computeVertexNormals();
   return g;
+}
+
+/** Scatter lots (for skylines) without streets: returns lots with seeds. */
+export function scatterLots({ seed, count, bounds, avoid = () => false, minW = 5, maxW = 9, spireChance = 0.04, towerBias = 0.06 }) {
+  const rnd = mulberry(seed);
+  const [x0, x1, z0, z1] = bounds;
+  const lots = [];
+  const GRID = 30;
+  const grid = new Map();
+  const key = (x, z) => Math.floor(x / GRID) * 7919 + Math.floor(z / GRID);
+  for (let tries = 0; tries < count * 6 && lots.length < count; tries++) {
+    const type = pickType(rnd, spireChance, towerBias);
+    const big = type === 'church';
+    const w = big ? 14 + rnd() * 4 : type === 'tower' ? 5.5 : minW + rnd() * (maxW - minW);
+    const d = big ? 18 + rnd() * 4 : type === 'tower' ? w : minW + rnd() * (maxW - minW);
+    const x = x0 + rnd() * (x1 - x0);
+    const z = z0 + rnd() * (z1 - z0);
+    const r = Math.max(w, d) * 0.62;
+    if (avoid(x, z, r)) continue;
+    let clash = false;
+    for (let gx = -1; gx <= 1 && !clash; gx++)
+      for (let gz = -1; gz <= 1 && !clash; gz++)
+        for (const o of grid.get(key(x + gx * GRID, z + gz * GRID)) || []) if ((o.x - x) ** 2 + (o.z - z) ** 2 < (o.r + r) ** 2) clash = true;
+    if (clash) continue;
+    const lot = { x, z, w, d, r, type, rot: (rnd() < 0.5 ? 0 : Math.PI / 2) + (rnd() - 0.5) * 0.5, seed: 90001 + lots.length * 17 + seed };
+    lots.push(lot);
+    if (!grid.has(key(x, z))) grid.set(key(x, z), []);
+    grid.get(key(x, z)).push(lot);
+  }
+  return lots;
 }
