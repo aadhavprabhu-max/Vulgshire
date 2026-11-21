@@ -187,7 +187,7 @@ function frame() {
   }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   retro.render(scene, camera);
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, get info() { return retro.stats; } };
   requestAnimationFrame(frame);
 }
 frame();
