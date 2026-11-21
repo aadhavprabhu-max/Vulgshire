@@ -6,7 +6,8 @@ import { SCENES } from './scenes/index.js';
 import { createMonk } from './player/monk.js';
 import { ThirdPersonController } from './player/controller.js';
 import { createHud } from './ui/hud.js';
-import { validateWorld } from './data/world.js';
+import { validateWorld, LOCATIONS } from './data/world.js';
+import { createMetroMap } from './ui/metromap.js';
 
 validateWorld();
 loadSettingsFromURL();
@@ -81,6 +82,7 @@ function loadScene(index, entry = null) {
   controller.pitch = start.pitch ?? 0.1;
   monk.state.baseIntensity = built.lanternIntensity ?? 4;
 
+  built.onEnter?.(entry);
   patchSceneMaterials(scene);
   refreshSceneMaterials(scene);
   hud.setScene?.(def.title);
@@ -132,6 +134,9 @@ window.addEventListener('keydown', (e) => {
       loadScene(sceneIndex);
       hud.toast(`Scene: ${SCENES[sceneIndex].title}`);
       break;
+    case 'KeyM':
+      metroMap.toggle(whereOnMap());
+      break;
     case 'KeyV':
       controller.setFirstPerson(!controller.firstPerson);
       hud.toast(`View: ${controller.firstPerson ? 'first person' : 'third person'}`);
@@ -144,6 +149,15 @@ window.addEventListener('keydown', (e) => {
 
 // Debug overhead camera: ?debugcam=x,y,z,lookX,lookZ
 const debugCam = new URLSearchParams(location.search).get('debugcam')?.split(',').map(Number) ?? null;
+
+// ---- The city / metro map (M) ------------------------------------------------
+const metroMap = createMetroMap();
+function whereOnMap() {
+  const b = current.built;
+  if (b.mapPos) return b.mapPos(controller.pos);
+  const pinFor = { crownkeep: 'crownkeep', cathedral: 'cathedral', cloister: 'cloister', rooftop: 'rooftop' }[current.def.id];
+  return LOCATIONS.places.find((p) => p.id === pinFor)?.mapPx ?? null;
+}
 
 // ---- Portals: walk into a doorway -> fade out, load the other zone, fade in --
 const fadeEl = document.getElementById('fade');
@@ -178,9 +192,10 @@ let frames = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
-  current.built.update?.(dt, t, { controller, camera, player: controller.pos });
+  current.built.update?.(dt, t, { controller, camera, player: controller.pos, scene });
   controller.update(dt);
   checkPortals();
+  if (metroMap.open) metroMap.setHere(whereOnMap());
   monk.update(dt, t, controller.speed);
   if (debugCam) {
     camera.position.set(debugCam[0], debugCam[1], debugCam[2]);
@@ -188,7 +203,7 @@ function frame() {
   }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   retro.render(scene, camera);
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get info() { return retro.stats; } };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; } };
   requestAnimationFrame(frame);
 }
 frame();

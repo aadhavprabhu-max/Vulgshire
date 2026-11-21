@@ -4,5 +4,6 @@ import rooftop from './rooftop.js';
 import bridge from './bridge.js';
 import cathedral from './cathedral.js';
 import crownkeep from './crownkeep.js';
+import metro from './metro.js';
 
-export const SCENES = [cloister, rooftop, bridge, crownkeep, cathedral];
+export const SCENES = [cloister, rooftop, bridge, crownkeep, cathedral, metro];

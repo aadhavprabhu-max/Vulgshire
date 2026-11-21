@@ -46,13 +46,23 @@ export function createMapTerrain(originPx) {
    * Ground (land only, merged row runs), quay walls along every shore, low
    * parapets on walkable shores, all inside the map pixel box [px0..px1)x[py0..py1).
    */
-  function buildGround({ px0, px1, py0, py1, waterY, skip = () => false, parapetWhere = () => false }) {
+  function buildGround({ px0, px1, py0, py1, waterY, skip = () => false, parapetWhere = () => false, waterAt = null, noQuay = null }) {
     const gPos = [];
     const gUv = [];
     const qPos = [];
     const qUv = [];
     const parapets = [];
-    const land = (px, py) => px >= 0 && py >= 0 && px < W && py < H && !WATER[py * W + px];
+    // Land test, optionally with extra water carved in (cached per pixel).
+    const bw = px1 - px0 + 2;
+    const cache = new Int8Array(bw * (py1 - py0 + 2));
+    const land = (px, py) => {
+      if (px < 0 || py < 0 || px >= W || py >= H || WATER[py * W + px]) return false;
+      if (!waterAt) return true;
+      const ci = (py - py0 + 1) * bw + (px - px0 + 1);
+      if (ci < 0 || ci >= cache.length || px < px0 - 1 || px > px1) return !waterAt(...toZone(px + 0.5, py + 0.5));
+      if (!cache[ci]) cache[ci] = waterAt(...toZone(px + 0.5, py + 0.5)) ? 2 : 1;
+      return cache[ci] === 1;
+    };
     const quad = (pos, uv, a, b, c, d, ua, ub, uc, ud) => {
       for (const [p, u] of [
         [a, ua],
@@ -95,6 +105,7 @@ export function createMapTerrain(originPx) {
           const xa = toZone(s, 0)[0];
           const xb = toZone(qx, 0)[0];
           const len = xb - xa;
+          if (noQuay && noQuay((xa + xb) / 2, zz)) continue;
           if (dir > 0) quad(qPos, qUv, [xa, 0, zz], [xa, waterY - 1, zz], [xb, waterY - 1, zz], [xb, 0, zz], [xa / 2, 0], [xa / 2, 2.5], [xb / 2, 2.5], [xb / 2, 0]);
           else quad(qPos, qUv, [xb, 0, zz], [xb, waterY - 1, zz], [xa, waterY - 1, zz], [xa, 0, zz], [xb / 2, 0], [xb / 2, 2.5], [xa / 2, 2.5], [xa / 2, 0]);
           const mid = (xa + xb) / 2;
@@ -109,6 +120,7 @@ export function createMapTerrain(originPx) {
           const xx = toZone(dir > 0 ? x + 1 : x, 0)[0];
           const [, za] = toZone(0, py);
           const [, zb] = toZone(0, py + 1);
+          if (noQuay && noQuay(xx, (za + zb) / 2)) continue;
           if (dir > 0) quad(qPos, qUv, [xx, 0, zb], [xx, waterY - 1, zb], [xx, waterY - 1, za], [xx, 0, za], [zb / 2, 0], [zb / 2, 2.5], [za / 2, 2.5], [za / 2, 0]);
           else quad(qPos, qUv, [xx, 0, za], [xx, waterY - 1, za], [xx, waterY - 1, zb], [xx, 0, zb], [za / 2, 0], [za / 2, 2.5], [zb / 2, 2.5], [zb / 2, 0]);
           const xIn = xx - dir * 0.35;

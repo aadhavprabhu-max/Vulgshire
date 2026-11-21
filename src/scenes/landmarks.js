@@ -28,7 +28,7 @@ function mats() {
 
 // A pale, softly lit clock dial with Roman-ish ticks and iron hands.
 let _clock = null;
-function clockFace() {
+export function clockFace() {
   if (_clock) return _clock;
   const s = 64;
   const c = document.createElement('canvas');
