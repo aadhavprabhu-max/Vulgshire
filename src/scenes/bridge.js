@@ -5,6 +5,9 @@ import { street, lotsAlongStreets, streetGeometry, scatterLots } from './town.js
 import { createMapTerrain } from './mapterrain.js';
 import { createChunkedTown } from './chunks.js';
 import { buildStation, buildCathedralExterior, buildGuildhall } from './landmarks.js';
+import { signTex } from './metro.js';
+import { createTrain, TRAIN_L } from './train.js';
+import METRO from '../data/metro.json';
 import { smokeColumn, embers } from './fx.js';
 import { buildCastle } from './castle.js';
 import { createGuard } from '../characters/guard.js';
@@ -294,6 +297,102 @@ function buildZone() {
     torches.push(...l.flames);
   }
   const inFootprint = (x, z, r) => landmarks.some(({ footprint: [a, b, c, d] }) => x > a - r && x < b + r && z > c - r && z < d + r);
+
+  // ---- The Ancient Underground: station entrances and the river viaduct ------------
+  const metroEntries = {};
+  const metroPortals = [];
+  {
+    const SM = { stone: lambert(tex.townStone(), { color: 0xc8c0b4 }), roof: lambert(tex.slate()), dark: new THREE.MeshBasicMaterial({ color: 0x0c0a08 }), glow: new THREE.MeshBasicMaterial({ color: 0xffa048 }) };
+    // Triflumen: down through Grand Central Station's great doors.
+    const fz = stZ + 16;
+    metroPortals.push({ minX: stX - 3.4, maxX: stX + 3.4, minZ: fz + 4.6, maxZ: fz + 5.4, to: 'metro', entry: 'st-triflumen' });
+    metroEntries['metro-triflumen'] = { pos: new THREE.Vector3(stX, 0, fz + 9), yaw: Math.PI, pitch: 0.12 };
+    const clearSpot = (x, z) => {
+      for (const dz of [0, 1.5, 3, 4.5])
+        for (const dx of [-3, 0, 3]) if (!walkable(x + dx, z + dz) || inFootprint(x + dx, z + dz, 0)) return false;
+      return true;
+    };
+    for (const st of METRO.stations) {
+      if (st.id === 'triflumen') continue;
+      let [x, z] = T.toZone(st.mapPx[0], st.mapPx[1]);
+      // Nearest clear, walkable spot (spiral search).
+      let found = clearSpot(x, z) ? [x, z] : null;
+      for (let rr = 3; !found && rr < 90; rr += 3)
+        for (let a = 0; a < 24 && !found; a++) {
+          const cx = x + Math.cos((a / 24) * Math.PI * 2) * rr;
+          const cz = z + Math.sin((a / 24) * Math.PI * 2) * rr;
+          if (clearSpot(cx, cz)) found = [cx, cz];
+        }
+      if (!found) continue;
+      [x, z] = found;
+      // A small stone kiosk with a pointed opening (facing +z) and the line roundel.
+      const k = new THREE.Group();
+      k.position.set(x, 0, z);
+      const parts = [boxGeo(5.2, 3.6, 0.5, 0, 1.8, -2.25, 0, 1), boxGeo(0.5, 3.6, 4.5, -2.35, 1.8, 0, 0, 1), boxGeo(0.5, 3.6, 4.5, 2.35, 1.8, 0, 0, 1), boxGeo(5.2, 0.7, 0.5, 0, 3.25, 2.0, 0, 1)];
+      k.add(mergedMesh(parts, SM.stone, { cast: true }));
+      const rf = new THREE.ConeGeometry(4.2, 2.4, 4);
+      rf.rotateY(Math.PI / 4);
+      rf.scale(1, 1, 0.9);
+      rf.translate(0, 4.8, 0);
+      k.add(new THREE.Mesh(rf, SM.roof));
+      const hole = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 3.4), SM.dark);
+      hole.rotation.x = -Math.PI / 2;
+      hole.position.set(0, 0.03, 0);
+      k.add(hole);
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), SM.glow);
+      glow.position.set(0, 0.6, -1.95);
+      k.add(glow);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 0.72), new THREE.MeshBasicMaterial({ map: signTex(st.name) }));
+      sign.position.set(0, 3.25, 2.27);
+      k.add(sign);
+      root.add(k);
+      const tf = torchFlame(x - 2.9, 2.6, z + 2.3, false, 1.0);
+      root.add(tf.group);
+      torches.push(tf);
+      colliders.push({ minX: x - 2.6, maxX: x + 2.6, minZ: z - 2.5, maxZ: z - 2.0 }, { minX: x - 2.6, maxX: x - 2.1, minZ: z - 2.5, maxZ: z + 2.25 }, { minX: x + 2.1, maxX: x + 2.6, minZ: z - 2.5, maxZ: z + 2.25 });
+      metroPortals.push({ minX: x - 2, maxX: x + 2, minZ: z - 1.9, maxZ: z + 0.6, to: 'metro', entry: 'st-' + st.id });
+      metroEntries['metro-' + st.id] = { pos: new THREE.Vector3(x, 0, z + 5), yaw: Math.PI, pitch: 0.12 };
+      landmarks.push({ footprint: [x - 4, x + 4, z - 4, z + 7] });
+    }
+  }
+  // The rail viaduct over the north river, where the Pilgrim's Way runs in the open.
+  const viaduct = (() => {
+    const vz = 118;
+    let xa = null;
+    let xb = null;
+    for (let x = -40; x < 180; x += 0.5) {
+      if (T.isWater(x, vz)) {
+        if (xa === null) xa = x;
+        xb = x;
+      } else if (xa !== null && xb !== null && x - xb > 6) break;
+    }
+    if (xa === null) return null;
+    xa -= 9;
+    xb += 9;
+    const len = xb - xa;
+    const deck = [];
+    deck.push(boxGeo(len, 1.4, 6.2, (xa + xb) / 2, 3.3, vz, 0, 2));
+    for (const sz of [-1, 1]) deck.push(boxGeo(len, 1.1, 0.4, (xa + xb) / 2, 4.55, vz + sz * 2.9, 0, 1));
+    const n = Math.max(2, Math.round(len / 14));
+    for (let k = 0; k <= n; k++) deck.push(boxGeo(2.2, 8, 3.2, xa + (len * k) / n, -1.5, vz, 0, 1));
+    // Tunnel portals in the banks at both ends.
+    for (const ex of [xa - 3, xb + 3]) {
+      deck.push(boxGeo(6, 7, 9, ex, 3.5, vz, 0, 1));
+    }
+    root.add(mergedMesh(deck, M.stone, { cast: true }));
+    for (const ex of [xa, xb]) {
+      const mouth = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 4), new THREE.MeshBasicMaterial({ color: 0x050404 }));
+      mouth.rotation.y = ex === xa ? Math.PI / 2 : -Math.PI / 2;
+      mouth.position.set(ex === xa ? xa - 0.02 : xb + 0.02, 6, vz);
+      root.add(mouth);
+    }
+    colliders.push({ minX: xa - 6.5, maxX: xa + 0.5, minZ: vz - 5, maxZ: vz + 5 }, { minX: xb - 0.5, maxX: xb + 6.5, minZ: vz - 5, maxZ: vz + 5 });
+    landmarks.push({ footprint: [xa - 8, xb + 8, vz - 9, vz + 9] });
+    const train = createTrain();
+    train.group.position.set(xa - 60, 4.0, vz);
+    root.add(train.group);
+    return { train, xa, xb, vz, t: 0 };
+  })();
   const paving = streets.map((s) => streetGeometry(s, 0.015));
   for (const q of squares) {
     const g = new THREE.CircleGeometry(q.r, 16);
@@ -482,16 +581,22 @@ function buildZone() {
     entries: {
       // Coming back out of the Crownkeep: just outside the gate, facing the bridge.
       gate: { pos: new THREE.Vector3(GX - 7, 0, 0), yaw: Math.PI / 2, pitch: 0.12 },
+      ...metroEntries,
       // Out of the cathedral / cloister: on the steps, facing the square.
       cathedral: { pos: new THREE.Vector3(cathedral.door.x, 0, cathedral.door.z + 4), yaw: Math.PI, pitch: 0.1 },
       cloister: { pos: new THREE.Vector3(cathedral.cloisterDoor.x + 3, 0, cathedral.cloisterDoor.z), yaw: -Math.PI / 2, pitch: 0.1 },
     },
     portals: [
       ...portals,
+      ...metroPortals,
       { minX: cathedral.door.x - 3, maxX: cathedral.door.x + 3, minZ: cathedral.door.z - 0.6, maxZ: cathedral.door.z + 0.9, to: 'cathedral', entry: 'door' },
       { minX: cathedral.cloisterDoor.x - 0.6, maxX: cathedral.cloisterDoor.x + 1.1, minZ: cathedral.cloisterDoor.z - 2, maxZ: cathedral.cloisterDoor.z + 2, to: 'cloister', entry: 'door' },
     ],
     walkable,
+    // Where the player is on the city map.
+    mapPos(p) {
+      return T.toPx(p.x, p.z);
+    },
     lanternIntensity: 3,
     env: {
       fog: { color: 0x170d20, density: 0.0052 },
@@ -500,6 +605,16 @@ function buildZone() {
     },
     update(dt, t, ctx) {
       flickerTorches(torches, t);
+      // A train crosses the viaduct every 40 seconds (alternating directions).
+      if (viaduct) {
+        viaduct.t = (viaduct.t + dt) % 80;
+        const ph = viaduct.t % 40;
+        const span = viaduct.xb - viaduct.xa + TRAIN_L + 20;
+        const k = Math.min(1, ph / 14);
+        const x = viaduct.t < 40 ? viaduct.xa - TRAIN_L / 2 - 10 + span * k : viaduct.xb + TRAIN_L / 2 + 10 - span * k;
+        viaduct.train.group.position.x = x;
+        viaduct.train.group.visible = ph < 14;
+      }
       // Stream detailed houses near the player; far ones stay simple.
       if (ctx?.player) {
         // Hide flames, lamps and small props that are far away (each is a draw call).
