@@ -1,6 +1,6 @@
 # VULGSHIRE — project brief for Claude Code
 
-A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". All four reference scenes have a first pass. The bridge scene is now the first **fully walkable zone**, the North River Crossing, built from the final map. First-person view exists (**V**). Waiting for the user's feedback.
+A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". All four reference scenes have a first pass. The bridge scene is the first **fully walkable zone** (North River Crossing, built from the final map). Its castle gate now opens into **Inside the Crownkeep**, a walkable interior with a grand staircase and the Great Hall. First-person view exists (**V**).
 
 ## How to work with me
 
@@ -26,7 +26,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 - `npm install` once, then `npm run dev` and open the printed URL.
 - Controls: click to lock the mouse and look around, **WASD** or arrow keys to move, **Shift** to run, **Q/E** to turn, **V** for first or third person.
-- Scenes: **[** and **]** switch between the four scenes, or open one directly with `?scene=cloister|rooftop|bridge|cathedral`.
+- Scenes: **[** and **]** switch between the five scenes, or open one directly with `?scene=cloister|rooftop|bridge|crownkeep|cathedral` (or `#crownkeep` etc.). Walking through the castle gate (and back out the door) changes zone automatically, with a fade.
 - Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD. These are number keys because browsers reserve most F-keys.
 - URL flags: `?res=0|1|2&jitter=1&fog=0&dither=0&grade=0`, `&shot=1` (hides the HUD), `&pose=x,z,yaw,pitch` (debug camera pose), `&view=first`.
 - Progress screenshots: `node tools/screenshot.mjs screenshots/progress/NNN-name.png ["query"]` renders headless at 640x360. It needs Playwright; in the cloud container it uses the preinstalled global copy.
@@ -39,9 +39,8 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 ## GitHub Pages
 
-- `.github/workflows/pages.yml` builds and deploys the game on every push to `main` (or by running it manually).
-- The planned URL is https://aadhavprabhu-max.github.io/Vulgshire/ (add `#bridge` and so on to pick a scene).
-- One-time setup by the repo owner: (1) Pages needs a **public** repo or a paid GitHub plan, and the repo is private right now; (2) Settings → Pages → Source: **GitHub Actions**; (3) get this work merged into `main`.
+- **Live:** https://aadhavprabhu-max.github.io/Vulgshire/ (add `#bridge`, `#crownkeep` and so on to pick a scene).
+- `.github/workflows/pages.yml` builds and deploys on every push to `main` (or by running it manually). The repo is public and Pages is set to "GitHub Actions".
 
 ## Code layout
 
@@ -52,7 +51,8 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - `src/scenes/buildings.js`: varied building kit. `src/scenes/town.js`: streets, lot placement along streets, scatter towns. `src/scenes/castle.js`: the Crownkeep.
 - `src/data/locations.json`: pinned places and zones on the map. `tools/annotate_map.py` renders `docs/map-locations.png` from it.
 - `src/scenes/fx.js`: blocky smoke columns, ember particles, roof fires.
-- `src/scenes/cloister.js` (ref 01), `rooftop.js` (ref 02), `bridge.js` (ref 03), `cathedral.js` (ref 04).
+- `src/scenes/cloister.js` (ref 01), `rooftop.js` (ref 02), `bridge.js` (ref 03), `crownkeep.js` (interiors refs), `cathedral.js` (ref 04).
+- Scene contract extras: `floors` (walkable surfaces: flat `{minX,maxX,minZ,maxZ,y}` or ramps `{...,y0,y1,axis}`), `portals` (`{minX,maxX,minZ,maxZ,maxY?,to,entry}`), and `entries` (named arrival points `{pos,yaw,pitch}`).
 - `src/characters/`: NPCs: `guard.js` (horned helm, spear) and `alchemist.js` (green striped robe).
 - `src/player/`: `monk.js` (model, lantern, animation), `controller.js` (third-person camera, movement, collision).
 - `src/data/world.js`: world names, map positions and the three-rivers rule check (`validateWorld`).
@@ -84,6 +84,15 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **East bank:** the castle road, riverside lane and side street, and the closed Crownkeep gatehouse. The Crownkeep sits on its hill at x ≈ 205 (scaled ×1.45).
 - **Bounds:** walkable x −155…98, z −78…88, with invisible walls and wooden barricades wherever a street leaves the zone. Skyline-only districts continue beyond.
 - **Colliders:** axis-aligned `{minX,maxX,minZ,maxZ}` or rotated `{cx,cz,hx,hz,rot}`. An optional `h` (height) lets the camera pass over low things like railings; without `h` the camera treats the collider as a full-height wall.
+
+## Inside the Crownkeep (`src/scenes/crownkeep.js`)
+
+- Original design inspired by the mood references in `reference/interiors/` plus real halls: the medieval great hall's raised dais, the Palais Garnier's split ceremonial staircase, and the looping ribbed vault of Prague Castle's Vladislav Hall.
+- Coordinates: x = east (you enter from the west door), z = south. `GL = 6.5` is the upper floor.
+- **Grand Stair Hall** (x 0–28): a central flight up to a landing, two flights up to the east gallery, two-storey arcades with balustraded galleries, torchères, a tiered chandelier.
+- **Great Hall** (x 28–90, on the upper floor): a ribbed vault with looping ribs, moonbeams through the south lancets, a rose window over two rows of lancets, the dais with an **empty throne** (who sits there is undecided lore), the library gallery, a warm brick doorway, an inlaid floor medallion, chandeliers, and two guards at the door.
+- Exits: the west door goes back to the castle gate (`bridge`, entry `gate`).
+- Colliders use levels (`y0`/`y1`) so balustrades only block on their floor; floors handle the stairs.
 
 ## Buildings (`src/scenes/buildings.js`, `town.js`)
 
@@ -128,6 +137,7 @@ Source of truth for the layout is `reference/maps/vulgshire-topdown-FINAL.png`. 
 
 - `reference/maps/`: final top-down map plus the two older angled maps.
 - `reference/screenshots/`: the four look-and-feel stills.
+- `reference/interiors/`: two mood images for the Crownkeep interior (a gothic hall-library and a dark grand staircase), added by the user. They look like found images, so treat them as **mood references only**: never ship them or copy them as game assets.
 - `docs/MASTER_MAP_PROMPT.md`: the master map-generation prompt, verbatim.
 - `screenshots/progress/`: numbered progress screenshots (16:9, about 640 px wide).
 - `assets/` (planned): game assets, each with a note on its source and licence. Use only original or properly licensed assets.
