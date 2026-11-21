@@ -41,7 +41,7 @@ function disposeTree(root) {
   });
 }
 
-function loadScene(index) {
+function loadScene(index, entry = null) {
   if (current) {
     scene.remove(current.built.root, current.built.sky);
     disposeTree(current.built.root);
@@ -56,7 +56,7 @@ function loadScene(index) {
   fog.color.set(env.fog.color);
   fog.density = env.fog.density;
   scene.fog = settings.fog ? fog : null;
-  scene.background = new THREE.Color(env.fog.color);
+  scene.background = built.sky?.userData.background ?? new THREE.Color(env.fog.color);
   hemi.color.set(env.hemi.sky);
   hemi.groundColor.set(env.hemi.ground);
   hemi.intensity = env.hemi.intensity;
@@ -73,9 +73,11 @@ function loadScene(index) {
 
   controller.colliders = built.colliders;
   controller.blockers = built.cameraBlockers;
-  controller.pos.copy(built.spawn);
-  controller.yaw = controller.facing = built.spawnYaw;
-  controller.pitch = built.spawnPitch ?? 0.1;
+  controller.floors = built.floors || [];
+  const start = (entry && built.entries?.[entry]) || { pos: built.spawn, yaw: built.spawnYaw, pitch: built.spawnPitch };
+  controller.pos.copy(start.pos);
+  controller.yaw = controller.facing = start.yaw;
+  controller.pitch = start.pitch ?? 0.1;
   monk.state.baseIntensity = built.lanternIntensity ?? 4;
 
   patchSceneMaterials(scene);
@@ -89,7 +91,7 @@ loadScene(sceneIndex);
 const poseParam = new URLSearchParams(location.search).get('pose');
 if (poseParam) {
   const [x, z, yaw, pitch] = poseParam.split(',').map(Number);
-  controller.pos.set(x, current.built.spawn.y, z);
+  controller.pos.set(x, controller.floorAt(x, z, 100), z); // snap to the highest floor there
   controller.yaw = controller.facing = yaw;
   if (!Number.isNaN(pitch)) controller.pitch = pitch;
 }
@@ -139,18 +141,53 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// Debug overhead camera: ?debugcam=x,y,z,lookX,lookZ
+const debugCam = new URLSearchParams(location.search).get('debugcam')?.split(',').map(Number) ?? null;
+
+// ---- Portals: walk into a doorway -> fade out, load the other zone, fade in --
+const fadeEl = document.getElementById('fade');
+let travelling = false;
+function travel(portal) {
+  travelling = true;
+  fadeEl.classList.add('on');
+  setTimeout(() => {
+    sceneIndex = SCENES.findIndex((s) => s.id === portal.to);
+    loadScene(sceneIndex, portal.entry);
+    hud.toast(SCENES[sceneIndex].title);
+    setTimeout(() => {
+      fadeEl.classList.remove('on');
+      travelling = false;
+    }, 250);
+  }, 450);
+}
+function checkPortals() {
+  if (travelling) return;
+  const p = controller.pos;
+  for (const portal of current.built.portals || []) {
+    if (p.x > portal.minX && p.x < portal.maxX && p.z > portal.minZ && p.z < portal.maxZ && p.y < (portal.maxY ?? Infinity)) {
+      travel(portal);
+      return;
+    }
+  }
+}
+
 // ---- Loop ------------------------------------------------------------------
 const clock = new THREE.Clock();
 let frames = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
-  current.built.update?.(dt, t, { controller, camera });
+  current.built.update?.(dt, t, { controller, camera, player: controller.pos });
   controller.update(dt);
+  checkPortals();
   monk.update(dt, t, controller.speed);
+  if (debugCam) {
+    camera.position.set(debugCam[0], debugCam[1], debugCam[2]);
+    camera.lookAt(debugCam[3], 0, debugCam[4]);
+  }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   retro.render(scene, camera);
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, get info() { return retro.stats; } };
   requestAnimationFrame(frame);
 }
 frame();

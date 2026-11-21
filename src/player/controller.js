@@ -1,10 +1,16 @@
 import * as THREE from 'three';
+import { floorAt as floorHeight } from './floors.js';
 
 // Third-person (over the shoulder) or first-person controller.
 // WASD / arrows move relative to the camera, Shift runs, mouse looks (click to
 // lock the pointer), Q/E turn without a mouse, V toggles first person.
 // Collision is circle-vs-box in XZ: axis-aligned boxes {minX,maxX,minZ,maxZ}
-// or rotated boxes {cx,cz,hx,hz,rot}.
+// or rotated boxes {cx,cz,hx,hz,rot}. Optional per-collider levels:
+//   y0 / y1 = the collider only blocks while the player's feet are in [y0, y1]
+//             (e.g. a gallery balustrade, or a stair block at ground level);
+//   h       = top of the collider for the camera (camera passes over below-h stuff).
+// Floors: scenes may provide walkable surfaces (flat or ramps) above the y = 0
+// ground; the player stands on the highest one within a step of their feet.
 
 const WALK_SPEED = 2.0;
 const RUN_SPEED = 4.2;
@@ -13,6 +19,8 @@ const SHOULDER = new THREE.Vector3(1.1, 0.0, 0); // camera sits right of the mon
 const DISTANCE = 3.9;
 const HEAD_HEIGHT = 1.8;
 const EYE_HEIGHT = 1.62;
+
+const active = (b, y) => (b.y0 === undefined || y >= b.y0 - 0.01) && (b.y1 === undefined || y <= b.y1);
 
 export class ThirdPersonController {
   constructor({ camera, character, canvas, colliders, blockers, spawn, yaw = 0 }) {
@@ -27,6 +35,8 @@ export class ThirdPersonController {
     this.speed = 0;
     this.keys = new Set();
     this.firstPerson = false;
+    this.floors = [];
+    this.ground = 0;
     this.raycaster = new THREE.Raycaster();
 
     window.addEventListener('keydown', (e) => this.keys.add(e.code));
@@ -93,16 +103,25 @@ export class ThirdPersonController {
     }
     if (this.firstPerson) this.facing = this.yaw;
     this.collide();
+    // Stand on the highest floor within a step; fall smoothly otherwise.
+    const want = this.floorAt(this.pos.x, this.pos.z, this.pos.y);
+    if (want >= this.pos.y) this.pos.y = want;
+    else this.pos.y = Math.max(want, this.pos.y - 9 * dt);
 
     this.character.root.position.copy(this.pos);
     this.character.root.rotation.y = this.facing;
     this.updateCamera();
   }
 
+  floorAt(x, z, y) {
+    return floorHeight(this.floors, this.ground, x, z, y);
+  }
+
   collide() {
     const p = this.pos;
     for (let iter = 0; iter < 3; iter++) {
       for (const b of this.colliders) {
+        if (!active(b, p.y)) continue;
         if (b.rot !== undefined) {
           this.collideOBB(p, b);
           continue;
@@ -198,7 +217,7 @@ export class ThirdPersonController {
       const x = pivot.x + back.x * s;
       const y = pivot.y + back.y * s;
       const z = pivot.z + back.z * s;
-      if (this.colliders.some((b) => y < (b.h ?? Infinity) && this.pointInCollider(x, z, b, 0.25))) {
+      if (this.colliders.some((b) => y < (b.h ?? Infinity) && y > (b.y0 ?? -Infinity) && this.pointInCollider(x, z, b, 0.25))) {
         dist = Math.max(0.4, s - 0.3);
         break;
       }

@@ -177,14 +177,12 @@ export function mulberry(seed) {
 }
 
 // Sky dome + moon + halo, unaffected by fog.
-export function buildSky({ preset = 'night', moonDir = null, moonSize = 34 } = {}) {
+// Night sky: a seamless equirectangular star background (set as scene.background
+// by main.js, so there is no dome to see) plus the moon and its halo as sprites
+// that follow the camera. `horizon` should match the scene's fog colour.
+export function buildSky({ moonDir = null, moonSize = 34, horizon = 0x0c1228 } = {}) {
   const g = new THREE.Group();
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(400, 24, 12),
-    new THREE.MeshBasicMaterial({ map: tex.sky(preset), side: THREE.BackSide, fog: false, depthWrite: false }),
-  );
-  dome.renderOrder = -10;
-  g.add(dome);
+  g.userData.background = tex.nightSky(horizon);
   if (moonDir) {
     const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.moon(), fog: false, depthWrite: false }));
     moon.position.copy(moonDir).multiplyScalar(300);
@@ -192,7 +190,7 @@ export function buildSky({ preset = 'night', moonDir = null, moonSize = 34 } = {
     moon.renderOrder = -9;
     g.add(moon);
     const halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: tex.halo(), fog: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.55 }),
+      new THREE.SpriteMaterial({ map: tex.halo(), fog: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.45 }),
     );
     halo.position.copy(moonDir).multiplyScalar(310);
     halo.scale.set(moonSize * 3.2, moonSize * 3.2, 1);

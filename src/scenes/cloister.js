@@ -390,14 +390,14 @@ function buildCloister() {
 
   return {
     root,
-    sky: buildSky({ preset: 'night', moonDir: MOON_DIR, moonSize: 34 }),
+    sky: buildSky({ moonDir: MOON_DIR, moonSize: 34, horizon: 0x0c1228 }),
     colliders,
     cameraBlockers,
     spawn: new THREE.Vector3(0.2, 0, 4.4),
     spawnYaw: -0.5,
     spawnPitch: 0.22,
     env: {
-      fog: { color: 0x101836, density: 0.028 },
+      fog: { color: 0x0c1228, density: 0.028 },
       hemi: { sky: 0x5466a8, ground: 0x14141f, intensity: 2.3 },
       dir: { dir: MOON_DIR, color: 0xbfd0ff, intensity: 2.6, shadow: true, extent: 26 },
     },

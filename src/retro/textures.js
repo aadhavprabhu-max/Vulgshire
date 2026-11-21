@@ -120,16 +120,20 @@ export const tex = {
   slate: () =>
     cached('slate', () => {
       const r = rng(13);
-      const tones = Array.from({ length: 64 }, () => 0.8 + r() * 0.35);
-      return toTexture(paint(64, 64, (x, y) => {
-        const row = Math.floor(y / 8);
-        const xx = x + (row % 2) * 4;
-        const col = Math.floor(xx / 8);
-        const ly = y % 8;
-        let k = tones[(row * 9 + col) % 64] * (0.92 + r() * 0.16);
-        if (ly === 7 || xx % 8 === 0) k *= 0.45;
-        else if (ly === 0) k *= 1.1;
-        return shade([72, 76, 92], k);
+      const S = 128;
+      const tones = Array.from({ length: 256 }, () => 0.75 + r() * 0.4);
+      const lichen = Array.from({ length: 7 }, () => [r() * S, r() * S, 3 + r() * 7]);
+      return toTexture(paint(S, S, (x, y) => {
+        const row = Math.floor(y / 16);
+        const xx = (x + (row % 2) * 10) % S;
+        const col = Math.floor(xx / 20);
+        const ly = y % 16;
+        let k = tones[(row * 11 + col) % 256] * (0.92 + r() * 0.14);
+        if (ly >= 14 || xx % 20 === 0) k *= 0.45;
+        else if (ly === 0) k *= 1.12;
+        let base = [72, 76, 92];
+        for (const [lx, lyy, lr] of lichen) if (Math.hypot(((x - lx + S * 1.5) % S) - S / 2, ((y - lyy + S * 1.5) % S) - S / 2) < lr) base = [96, 104, 70];
+        return shade(base, k);
       }));
     }),
   wood: () =>
@@ -172,52 +176,41 @@ export const tex = {
         return shade([150, 132, 100], streak * (0.82 + r() * 0.3));
       }));
     }),
-  // Sky dome textures. Presets: night (cloister), storm (purple, bridge), overcast (rooftop).
-  sky: (preset = 'night') =>
-    cached('sky-' + preset, () => {
-      const P = {
-        night: { stops: ['#04050d', '#0a0e22', '#141a38', '#0a0d1e'], cloud: [58, 68, 110], n: 70, a: 0.18, stars: 40, band: [18, 44] },
-        storm: { stops: ['#07030d', '#1d0f33', '#3a1f5a', '#26163a'], cloud: [92, 62, 140], n: 160, a: 0.22, stars: 0, band: [10, 60], streak: true },
-        overcast: { stops: ['#15141f', '#2c2b3c', '#4c4a5e', '#3a3948'], cloud: [92, 90, 112], n: 180, a: 0.2, stars: 0, band: [12, 62], streak: true },
-      }[preset];
-      const w = 256;
-      const h = 128;
+  // Night sky as an equirectangular background (no dome geometry, so no edges):
+  // near-black zenith, stars, and a glow at the horizon that matches the fog colour.
+  nightSky: (horizonHex = 0x0c1228) =>
+    cached('nightSky' + horizonHex, () => {
+      // Big enough that one texel is about one screen pixel at 640x360, so stars
+      // stay crisp points instead of blocky flakes.
+      const w = 2048;
+      const h = 1024;
+      const r = rng(211);
+      const hz = `rgb(${(horizonHex >> 16) & 255},${(horizonHex >> 8) & 255},${horizonHex & 255})`;
       const c = makeCanvas(w, h);
       const ctx = c.getContext('2d');
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, P.stops[0]);
-      grad.addColorStop(0.35, P.stops[1]);
-      grad.addColorStop(0.5, P.stops[2]);
-      grad.addColorStop(1, P.stops[3]);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-      const r = rng(37);
-      const [cr, cg, cb] = P.cloud;
-      for (let i = 0; i < P.n; i++) {
+      const g = ctx.createLinearGradient(0, 0, 0, h / 2);
+      g.addColorStop(0, '#010103');
+      g.addColorStop(0.55, '#020308');
+      g.addColorStop(0.85, hz);
+      g.addColorStop(1, hz);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h / 2);
+      ctx.fillStyle = hz;
+      ctx.fillRect(0, h / 2, w, h / 2);
+      // Stars: mostly faint single points, a few brighter ones, fading toward the horizon.
+      for (let i = 0; i < 2600; i++) {
+        const y = Math.pow(r(), 1.4) * h * 0.44;
         const x = r() * w;
-        const y = P.band[0] + r() * (P.band[1] - P.band[0]);
-        const rad = 6 + r() * 18;
-        const sx = P.streak ? 2.2 : 1; // stretched, streaky storm clouds
-        for (const ox of [-w, 0, w]) {
-          ctx.save();
-          ctx.translate(x + ox, y);
-          ctx.scale(sx, 1);
-          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rad);
-          const a = P.a + r() * P.a;
-          g.addColorStop(0, `rgba(${cr},${cg},${cb},${a})`);
-          g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-          ctx.fillStyle = g;
-          ctx.fillRect(-rad, -rad, rad * 2, rad * 2);
-          ctx.restore();
-        }
+        const fade = 1 - y / (h * 0.46);
+        const b = (0.4 + r() * 0.6) * fade;
+        const big = r() < 0.03;
+        ctx.fillStyle = `rgba(${210 + r() * 40},${215 + r() * 30},255,${Math.min(1, b * (big ? 1.6 : 1))})`;
+        ctx.fillRect(Math.floor(x), Math.floor(y), big ? 2 : 1, big ? 2 : 1);
       }
-      for (let i = 0; i < P.stars; i++) {
-        ctx.fillStyle = `rgba(200,210,255,${0.3 + r() * 0.5})`;
-        ctx.fillRect(Math.floor(r() * w), Math.floor(r() * 30), 1, 1);
-      }
-      const t = toTexture(c);
-      t.wrapT = THREE.ClampToEdgeWrapping;
-      return t;
+      const tx = toTexture(c);
+      tx.mapping = THREE.EquirectangularReflectionMapping;
+      tx.wrapT = THREE.ClampToEdgeWrapping;
+      return tx;
     }),
   moon: () =>
     cached('moon', () => {
@@ -315,26 +308,79 @@ export const tex = {
       return toTexture(paint(8, 16, (x, y) => (x === 0 || x === 7 || x === 4 ? [28, 27, 32, 255] : shade([14, 16, 26], 0.7 + r() * 0.6).concat(255))), { repeat: false });
     }),
   // Half-timbered plaster for town houses (2 m tile).
+  // Half-timbered wall, one storey (3 m) per repeat, 128 px. Three framing patterns:
+  // 0 = posts + rails + long braces, 1 = St Andrew's crosses, 2 = curved K-braces.
   plaster: (variant = 0) =>
     cached('plaster' + variant, () => {
       const r = rng(61 + variant);
-      const base = [[96, 88, 76], [84, 82, 80], [100, 84, 70]][variant % 3];
-      return toTexture(paint(64, 64, (x, y) => {
-        const beam = x % 32 < 3 || y % 32 < 3 || (variant !== 1 && Math.abs((x % 32) - (y % 32)) < 2 && y % 32 > 3);
-        if (beam) return shade([46, 34, 26], 0.8 + r() * 0.35);
-        return shade(base, 0.85 + r() * 0.25);
+      const S = 128;
+      const beam = [62, 44, 30];
+      const fill = [[214, 206, 190], [204, 200, 194], [218, 204, 184]][variant % 3];
+      const grain = Array.from({ length: S }, () => 0.85 + r() * 0.3);
+      const patches = [[20 + r() * 30, 95 + r() * 20, 5 + r() * 4]];
+      const B = 5; // beam width in px
+      const isBeam = (x, y) => {
+        const px = x % 64;
+        if (px < B) return true; // posts every 1.5 m
+        if (y < B || y > S - B - 1) return true; // top plate, sill beam
+        if (Math.abs(y - 86) < B / 2 + 0.5) return true; // window-sill rail
+        if (Math.abs(y - 38) < B / 2 + 0.5) return true; // window-head rail
+        const u = (px - B) / (64 - B); // 0..1 across the panel
+        if (variant === 0 && y > 86 && Math.abs((y - 86) / (S - B - 86) - (x % 128 < 64 ? u : 1 - u)) < 0.13) return true;
+        if (variant === 1 && y > 86) {
+          const v = (y - 86) / (S - B - 86);
+          if (Math.abs(v - u) < 0.12 || Math.abs(v - (1 - u)) < 0.12) return true;
+        }
+        if (variant === 2 && y < 38 && y > B) {
+          const v = (y - B) / (38 - B);
+          const c = Math.sqrt(Math.max(0, 1 - (1 - u) * (1 - u)));
+          if (Math.abs(v - c) < 0.14 && u < 0.6) return true;
+        }
+        return false;
+      };
+      return toTexture(paint(S, S, (x, y) => {
+        if (isBeam(x, y)) {
+          const k = grain[(x + y * 3) % S] * (x % 64 < B ? grain[y] : grain[x]) * 0.92;
+          return shade(beam, k * (0.9 + r() * 0.12));
+        }
+        let k = 0.9 + r() * 0.12;
+        for (const [px, py, pr] of patches) {
+          const d = Math.hypot(x - px, y - py);
+          if (d < pr) {
+            // Plaster fallen away: a few bricks of the infill show through.
+            const brick = (y % 6 === 0 || (x + (Math.floor(y / 6) % 2) * 4) % 8 === 0) ? 0.55 : 1;
+            return shade([170, 130, 104], brick * (0.88 + r() * 0.15));
+          }
+          if (d < pr + 1.5) k *= 0.8;
+        }
+        if (y > S - 20) k *= 0.86; // damp near the sill beam
+        return shade(fill, k);
       }));
     }),
+  // Curved clay roof tiles with moss, 128 px per 2 m.
   roofTile: () =>
     cached('roofTile', () => {
       const r = rng(67);
-      const tones = Array.from({ length: 64 }, () => 0.75 + r() * 0.4);
-      return toTexture(paint(64, 64, (x, y) => {
-        const row = Math.floor(y / 6);
-        const xx = x + (row % 2) * 3;
-        let k = tones[(row * 7 + Math.floor(xx / 6)) % 64] * (0.9 + r() * 0.2);
-        if (y % 6 === 5 || xx % 6 === 0) k *= 0.5;
-        return shade([92, 52, 42], k);
+      const S = 128;
+      const tones = Array.from({ length: 256 }, () => [0.72 + r() * 0.45, r() < 0.15 ? 1 : 0]);
+      const moss = Array.from({ length: 9 }, () => [r() * S, r() * S, 4 + r() * 10]);
+      return toTexture(paint(S, S, (x, y) => {
+        const row = Math.floor(y / 10);
+        const xx = (x + (row % 2) * 5) % S;
+        const col = Math.floor(xx / 10);
+        const ly = y % 10;
+        const lx = xx % 10;
+        const [tone, dark] = tones[(row * 13 + col) % 256];
+        // Barrel shape: bright crown, dark edges; shadow under the next row.
+        let k = tone * (0.7 + 0.45 * Math.sin((lx / 10) * Math.PI));
+        if (ly > 7) k *= 0.55;
+        if (ly === 0) k *= 1.15;
+        let base = dark ? [80, 44, 36] : [128, 66, 48];
+        for (const [mx, my, mr] of moss) {
+          const d = Math.hypot(((x - mx + S * 1.5) % S) - S / 2, ((y - my + S * 1.5) % S) - S / 2);
+          if (d < mr * (0.6 + r() * 0.5)) base = [70, 84, 44];
+        }
+        return shade(base, k * (0.92 + r() * 0.12));
       }));
     }),
   cobble: () =>
@@ -480,16 +526,52 @@ export const tex = {
       const r = rng(107);
       return toTexture(paint(16, 16, (x, y) => (x % 8 === 4 && y % 8 === 4 ? [120, 116, 110] : shade([46, 46, 52], 0.8 + r() * 0.4))));
     }),
-  // Neutral plaster, tinted per building with vertex colours.
+  // Neutral lime plaster (tinted per building), 128 px per 2 m: rain streaks,
+  // hairline cracks and patches where the plaster has fallen off the stone.
   plasterPlain: () =>
     cached('plasterPlain', () => {
       const r = rng(113);
-      const streaks = Array.from({ length: 64 }, () => (r() < 0.12 ? 0.9 : 1));
-      return toTexture(paint(64, 64, (x, y) => {
-        let k = (0.9 + r() * 0.14) * (y > 20 ? streaks[x] : 1); // rain streaks
-        if (y % 32 === 0) k *= 0.82; // faint storey line
-        return shade([206, 200, 188], k);
+      const S = 128;
+      const streak = Array.from({ length: S }, () => (r() < 0.18 ? 0.86 + r() * 0.08 : 1));
+      const patches = [[r() * S, 70 + r() * 50, 9 + r() * 6]]; // one ragged patch per 3 m tile
+      const cracks = new Set();
+      for (let c = 0; c < 6; c++) {
+        let x = r() * S;
+        let y = r() * S;
+        for (let i = 0; i < 40; i++) {
+          cracks.add((Math.floor(y + S) % S) * S + (Math.floor(x + S) % S));
+          x += (r() - 0.5) * 2.2;
+          y += 0.6 + r() * 0.8;
+        }
+      }
+      return toTexture(paint(S, S, (x, y) => {
+        for (const [px, py, pr] of patches) {
+          const dx = ((x - px + S * 1.5) % S) - S / 2;
+          const dy = ((y - py + S * 1.5) % S) - S / 2;
+          const ragged = pr * (0.75 + 0.35 * Math.sin(Math.atan2(dy, dx) * 5 + px) * Math.sin(Math.atan2(dy, dx) * 3));
+          const d = Math.hypot(dx * 0.7, dy);
+          if (d < ragged) {
+            const row = Math.floor((y + 64) / 7);
+            const mortar = (y + 64) % 7 === 0 || (x + row * 5) % 11 === 0;
+            return shade([168, 156, 138], (mortar ? 0.7 : 1) * (0.88 + r() * 0.18));
+          }
+          if (d < ragged + 1.2) return shade([176, 170, 158], 0.92);
+        }
+        let k = (0.9 + r() * 0.1) * streak[x];
+        if (cracks.has(y * S + x)) k *= 0.62;
+        return shade([212, 206, 194], k);
       }));
+    }),
+  // Rough ashlar for tower houses, quoins and stone ground floors.
+  townStone: () => cached('townStone', () => toTexture(blocks(128, 128, 16, 20, 40, [124, 116, 104], 191, { vary: 0.2, noise: 0.12, mortar: 0.5 }))),
+  flowerBox: () =>
+    cached('flowerBox', () => {
+      const r = rng(193);
+      const cols = [[220, 60, 70], [240, 200, 80], [200, 120, 220], [250, 250, 240]];
+      return toTexture(
+        paint(16, 8, () => (r() < 0.35 ? cols[Math.floor(r() * cols.length)] : shade([44, 80, 40], 0.7 + r() * 0.6))),
+        { repeat: true },
+      );
     }),
   awning: () =>
     cached('awning', () => toTexture(paint(16, 16, (x, y) => shade(x % 8 < 4 ? [232, 228, 220] : [150, 146, 140], y === 15 ? 0.6 : 1)))),
@@ -504,6 +586,157 @@ export const tex = {
         }),
         { repeat: false },
       );
+    }),
+  // ---- Crownkeep interior (128 px, more detail) ----------------------------
+  // Polished veined marble slabs. variant 0 = near-black, 1 = grey-violet, 2 = oxblood (balustrades).
+  marble: (variant = 0) =>
+    cached('marble' + variant, () => {
+      const r = rng(131 + variant);
+      const base = [[44, 40, 50], [96, 92, 104], [86, 34, 36]][variant];
+      const vein = [[118, 112, 126], [170, 166, 176], [170, 120, 110]][variant];
+      const ph = r() * 10;
+      return toTexture(paint(128, 128, (x, y) => {
+        const n = Math.sin(x * 0.06 + 2.6 * Math.sin(y * 0.045 + ph) + 1.7 * Math.sin((x + y) * 0.021 + ph * 2));
+        const v = Math.max(0, 1 - Math.abs(n) / 0.07);
+        const n2 = Math.sin(y * 0.09 + 3 * Math.sin(x * 0.03 + ph * 3));
+        const v2 = Math.max(0, 1 - Math.abs(n2) / 0.04) * 0.5;
+        const k = 0.9 + r() * 0.14;
+        const t = Math.min(1, v + v2);
+        let c = base.map((b, i) => (b + (vein[i] - b) * t) * k);
+        if (x % 64 === 0 || y % 64 === 0) c = c.map((q) => q * 0.55); // slab joints
+        else if (x % 64 === 1 || y % 64 === 1) c = c.map((q) => q * 1.12); // bevel highlight
+        return c.map(clamp255);
+      }));
+    }),
+  // Two-tone marble floor (dark / grey checker, 1 m tiles at 2 m per repeat).
+  marbleFloor: () =>
+    cached('marbleFloor', () => {
+      const r = rng(137);
+      const ph = 3.3;
+      return toTexture(paint(128, 128, (x, y) => {
+        const dark = (Math.floor(x / 64) + Math.floor(y / 64)) % 2 === 0;
+        const base = dark ? [34, 32, 40] : [74, 70, 80];
+        const vein = dark ? [74, 70, 84] : [116, 112, 124];
+        const n = Math.sin(x * 0.07 + 2.2 * Math.sin(y * 0.05 + ph) + (dark ? 4 : 0));
+        const t = Math.max(0, 1 - Math.abs(n) / 0.06);
+        let c = base.map((b, i) => (b + (vein[i] - b) * t) * (0.9 + r() * 0.14));
+        if (x % 64 === 0 || y % 64 === 0) c = c.map((q) => q * 0.5);
+        return c.map(clamp255);
+      }));
+    }),
+  // Circular inlaid floor medallion: knotwork bands, a stepped meander and an 8-point star.
+  medallion: () =>
+    cached('medallion', () => {
+      const S = 128;
+      const r = rng(139);
+      const dark = [52, 42, 38];
+      const light = [138, 116, 92];
+      const lead = [24, 20, 20];
+      return toTexture(
+        paint(S, S, (x, y) => {
+          const dx = x + 0.5 - S / 2;
+          const dy = y + 0.5 - S / 2;
+          const d = Math.hypot(dx, dy) / (S / 2);
+          const a = Math.atan2(dy, dx);
+          if (d > 1) return [0, 0, 0, 0];
+          const k = 0.88 + r() * 0.16;
+          const sh = (c) => c.map((q) => clamp255(q * k)).concat(255);
+          if (d > 0.96) return sh(lead);
+          if (d > 0.8) {
+            // Knot band: two interleaved sine strands.
+            const u = a * 12;
+            const w = (d - 0.88) / 0.07;
+            const s1 = Math.abs(w - Math.sin(u)) < 0.35;
+            const s2 = Math.abs(w + Math.sin(u)) < 0.35;
+            if (s1 || s2) return sh(light);
+            return sh(dark);
+          }
+          if (d > 0.77) return sh(lead);
+          if (d > 0.55) {
+            // Stepped meander (Greek-key-ish) band.
+            const u = ((a / (Math.PI * 2)) * 40 + 40) % 1;
+            const w = (d - 0.55) / 0.22;
+            const on = (u < 0.5 && w < 0.7 && w > 0.2) || (u >= 0.5 && (w > 0.7 || w < 0.3));
+            return sh(on ? light : dark);
+          }
+          if (d > 0.52) return sh(lead);
+          // 8-point star on dark ground.
+          const ang = Math.abs(((a / (Math.PI * 2)) * 8 + 8) % 1 - 0.5) * 2; // 0 at point, 1 between
+          const star = d < 0.48 * (0.45 + 0.55 * (1 - ang));
+          if (d < 0.08) return sh(lead);
+          return sh(star ? light : dark);
+        }),
+        { repeat: false },
+      );
+    }),
+  velvet: () =>
+    cached('velvet', () => {
+      const r = rng(149);
+      return toTexture(paint(32, 64, (x, y) => {
+        const fold = 0.72 + 0.28 * Math.sin(x * 0.8) ** 2;
+        const hem = y > 58 ? 1.6 : 1;
+        return shade(y > 58 ? [150, 110, 50] : [112, 18, 24], (fold * (0.92 + r() * 0.12)) / (y > 58 ? hem : 1));
+      }));
+    }),
+  books: () =>
+    cached('books', () => {
+      const r = rng(151);
+      const cols = [[96, 30, 28], [40, 62, 44], [70, 52, 34], [34, 40, 72], [110, 84, 46], [60, 30, 50], [90, 86, 70]];
+      const rows = [];
+      for (let row = 0; row < 4; row++) {
+        const spines = [];
+        let x = 0;
+        while (x < 64) {
+          const w = 2 + Math.floor(r() * 3);
+          spines.push({ x, w, c: cols[Math.floor(r() * cols.length)], h: 9 + Math.floor(r() * 5), lean: r() < 0.06 });
+          x += w;
+        }
+        rows.push(spines);
+      }
+      return toTexture(paint(64, 64, (x, y) => {
+        const row = Math.floor(y / 16);
+        const ly = y % 16;
+        if (ly >= 14) return shade([58, 40, 26], 1 + (ly === 14 ? 0.2 : 0)); // shelf board
+        const sp = rows[row].find((s) => x >= s.x && x < s.x + s.w);
+        if (!sp || 14 - ly > sp.h) return [16, 12, 10]; // dark back of the shelf
+        let k = x === sp.x ? 0.6 : 1;
+        if (ly === 14 - sp.h + 2 || ly === 11) k *= 1.35; // gilt bands
+        return shade(sp.c, k * (0.9 + r() * 0.15));
+      }));
+    }),
+  brickWarm: () => cached('brickWarm', () => toTexture(blocks(64, 64, 8, 12, 18, [150, 104, 72], 157, { vary: 0.2, mortar: 0.55 }))),
+  hallStone: () => cached('hallStone', () => toTexture(blocks(128, 128, 16, 22, 46, [86, 86, 98], 163, { vary: 0.18, noise: 0.12, mortar: 0.45 }))),
+  globe: () =>
+    cached('globe', () => {
+      const r = rng(167);
+      return toTexture(paint(64, 32, (x, y) => {
+        const land = Math.sin(x * 0.3) * Math.sin(y * 0.45 + 1) + Math.sin(x * 0.11 + y * 0.2) > 0.6;
+        if (x % 8 === 0 || y % 8 === 0) return [70, 50, 30];
+        return shade(land ? [150, 120, 70] : [70, 84, 80], 0.85 + r() * 0.2);
+      }));
+    }),
+  // Neutral woven cloth (tinted per character through the material colour).
+  cloth: () =>
+    cached('cloth', () => {
+      const r = rng(173);
+      return toTexture(paint(32, 32, (x, y) => {
+        const weave = (x + y) % 2 ? 0.94 : 1.04;
+        const fold = 0.86 + 0.14 * Math.sin(x * 0.55) ** 2;
+        return shade([200, 198, 194], weave * fold * (0.9 + r() * 0.12));
+      }));
+    }),
+  // Noble damask: a repeating lozenge pattern, also tinted.
+  damask: () =>
+    cached('damask', () => {
+      const r = rng(179);
+      return toTexture(paint(32, 32, (x, y) => {
+        const cx = (x % 16) - 7.5;
+        const cy = (y % 16) - 7.5;
+        const d = Math.abs(cx) + Math.abs(cy);
+        const on = d < 5 && d > 2.5;
+        const fold = 0.86 + 0.14 * Math.sin(x * 0.4) ** 2;
+        return shade(on ? [236, 228, 210] : [170, 166, 162], fold * (0.92 + r() * 0.1));
+      }));
     }),
   // Light shaft: bright core fading to the edges and toward the floor end.
   shaft: () =>

@@ -12,3 +12,5 @@ Libraries: [three.js](https://threejs.org) (MIT), [Vite](https://vitejs.dev) (MI
 When adding files here, add a row: what it is, where it came from, its licence.
 
 `docs/map-locations.png` is generated from the reference map by `tools/annotate_map.py` (pins and labels drawn on a copy).
+
+The images in `reference/interiors/` are mood references supplied by the project owner (source unknown). They are not game assets and must not be shipped or traced.

@@ -113,6 +113,7 @@ export class RetroRenderer {
     const r = this.renderer;
     r.setRenderTarget(this.target);
     r.render(scene, camera);
+    this.stats = { triangles: r.info.render.triangles, calls: r.info.render.calls };
     r.setRenderTarget(null);
     r.render(this.postScene, this.postCamera);
   }

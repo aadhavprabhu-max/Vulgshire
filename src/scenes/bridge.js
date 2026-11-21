@@ -5,6 +5,9 @@ import { buildTown, street, lotsAlongStreets, buildLots, streetGeometry } from '
 import { smokeColumn, embers } from './fx.js';
 import { buildCastle } from './castle.js';
 import { createGuard } from '../characters/guard.js';
+import { createPerson, PALETTES } from '../characters/people.js';
+import { createCrowd, faceToward } from '../characters/crowd.js';
+import { mulberry } from './kit.js';
 import { LOCATIONS } from '../data/world.js';
 
 // WALKABLE ZONE: "North River Crossing" (reference 03 for the look).
@@ -56,6 +59,7 @@ function mats() {
     slate: lambert(tex.slate()),
     rock: lambert(tex.darkStone(), { color: 0x6a6070 }),
     wood: lambert(tex.wood()),
+    gateWood: lambert(tex.wood(), { color: 0x9a8070 }),
     iron: lambert(null, { color: 0x1e1c1c }),
     lit: new THREE.MeshBasicMaterial({ map: tex.litWindow() }),
     gateGlow: new THREE.MeshBasicMaterial({ color: 0xff9a40 }),
@@ -227,12 +231,13 @@ function buildZone() {
 
   // ---- Ground (cobbles everywhere except over the river) -----------------
   {
-    const cell = 2;
+    // 4 m cells; the paved quay tops (RW..RW+3.2) cover the ragged edge by the water.
+    const cell = 4;
     const pos = [];
     const uv = [];
-    for (let x = -270; x < 190; x += cell) {
-      for (let z = -150; z < 210; z += cell) {
-        if (riverDist(x + 1, z + 1) < RW + 1.5) continue;
+    for (let x = -272; x < 192; x += cell) {
+      for (let z = -152; z < 212; z += cell) {
+        if (riverDist(x + 2, z + 2) < RW + 2.9) continue;
         const q = [
           [x, z],
           [x, z + cell],
@@ -393,13 +398,17 @@ function buildZone() {
   const built = buildLots(lots, 77, { litChance: 0.38 });
   root.add(built.group);
   colliders.push(...built.colliders);
+
+  // ---- Street life: market stalls, carts, barrels, lamps, townsfolk ----------
+  const life = streetLife({ M, streets, squares, colliders, root, BX, inBounds: (x, z) => x > BOUNDS.x0 + 3 && x < BOUNDS.x1 - 3 && z > BOUNDS.z0 + 3 && z < BOUNDS.z1 - 3 });
+  animated.push(life);
   // Distant districts beyond the zone (skyline only).
   root.add(
     buildTown({
       seed: 31,
       count: 260,
       bounds: [-330, 200, -260, 300],
-      avoid: (x, z, r) => inZone(x, z) || riverDist(x, z) < RW + 4 + r || nearCastle(x, z, r) || (x > 92 && Math.abs(z) < 80),
+      avoid: (x, z, r) => inZone(x, z) || riverDist(x, z) < RW + 4 + r || nearCastle(x, z, r) || (x > 92 && x < 320 && Math.abs(z) < 140), // castle precinct stays clear
     }),
   );
 
@@ -407,7 +416,7 @@ function buildZone() {
   const { x0, x1, z0, z1 } = BOUNDS;
   colliders.push(
     { minX: x0 - 2, maxX: x0, minZ: z0 - 10, maxZ: z1 + 10 },
-    { minX: x1, maxX: x1 + 2, minZ: z0 - 10, maxZ: z1 + 10 },
+    { minX: x1 + 12, maxX: x1 + 14, minZ: z0 - 10, maxZ: z1 + 10 }, // east: behind the gate; walls close the rest
     { minX: x0 - 10, maxX: x1 + 10, minZ: z0 - 2, maxZ: z0 },
     { minX: x0 - 10, maxX: x1 + 10, minZ: z1, maxZ: z1 + 2 },
   );
@@ -422,6 +431,7 @@ function buildZone() {
         const xn = ax + ((bx - ax) * (t + 0.5)) / len;
         const zn = az + ((bz - az) * (t + 0.5)) / len;
         if (inside(x, z) === inside(xn, zn)) continue;
+        if (x > 90 && Math.abs(z) < 8) continue; // the castle road runs on through the open gate
         const rot = Math.atan2(bx - ax, bz - az) + Math.PI / 2;
         const w = s.halfWidth * 2 + 1;
         fence.push(boxGeo(w, 0.18, 0.12, 0, 0, 0, 0, 1).rotateY(rot).translate(x, 0.6, z));
@@ -452,16 +462,44 @@ function buildZone() {
       root.add(w);
     }
   }
-  // Curtain wall running from the gatehouse along the foot of the hill.
-  root.add(box(3, 11, 90, M.castle, GX + 2, 5.5, 0));
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 6.5), M.gateGlow);
+  // Curtain wall running north and south from the gatehouse along the hill foot.
+  for (const sz of [-1, 1]) {
+    root.add(box(3, 11, 80, M.castle, GX + 2, 5.5, sz * 48));
+    colliders.push({ minX: GX - 4, maxX: GX + 6, minZ: sz < 0 ? -90 : 2.5, maxZ: sz < 0 ? -2.5 : 90 });
+  }
+  // The gate itself: two oak leaves that swing inward as you approach.
+  const leaves = [];
+  const leafGeo = new THREE.BoxGeometry(0.35, 4.6, 2.5);
+  leafGeo.translate(0, 2.3, -1.25 * 1); // hinge on one edge
+  for (const sz of [-1, 1]) {
+    const hinge = new THREE.Group();
+    hinge.position.set(GX + 1.6, 0, sz * 2.5);
+    const leaf = new THREE.Mesh(leafGeo, M.gateWood);
+    leaf.scale.z = sz; // mirror so both hinge outward
+    leaf.castShadow = true;
+    hinge.add(leaf);
+    for (const y of [1.0, 3.4]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 2.5), M.iron);
+      band.position.set(0, y, -1.25 * sz);
+      hinge.add(band);
+    }
+    root.add(hinge);
+    leaves.push({ hinge, sz, open: 0 });
+  }
+  // Warm torchlight spilling from the inner ward through the gate.
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(5, 6.5), M.gateGlow);
   glow.rotation.y = -Math.PI / 2;
-  glow.position.set(GX + 0.5, 3.2, 0);
+  glow.position.set(GX + 9, 3.2, 0);
   root.add(glow);
   const gateLight = new THREE.PointLight(0xff8a30, 18, 26, 1.6);
   gateLight.position.set(GX - 5, 3, 0);
   root.add(gateLight);
-  colliders.push({ minX: GX - 4, maxX: GX + 6, minZ: -60, maxZ: 60 });
+  const innerLight = new THREE.PointLight(0xff9a48, 14, 18, 1.6);
+  innerLight.position.set(GX + 6, 3.5, 0);
+  root.add(innerLight);
+  // Walking through the open gate leads inside the Crownkeep.
+  const portals = [{ minX: GX + 3.5, maxX: GX + 12, minZ: -2.5, maxZ: 2.5, to: 'crownkeep', entry: 'gate' }];
+  colliders.push({ minX: GX + 7, maxX: GX + 8, minZ: -3, maxZ: 3 }); // backstop behind the portal
   for (const sz of [-1, 1]) {
     const t = torchFlame(GX - 4.3, 3.2, sz * 3.4, false, 1.4);
     root.add(t.group);
@@ -501,21 +539,32 @@ function buildZone() {
 
   return {
     root,
-    sky: buildSky({ preset: 'storm' }),
+    sky: buildSky({ moonDir: new THREE.Vector3(0.9, 0.42, 0.28).normalize(), moonSize: 30, horizon: 0x170d20 }),
     colliders,
     cameraBlockers,
     spawn: new THREE.Vector3(-25, 0, -0.9),
     spawnYaw: -Math.PI / 2 + 0.03,
     spawnPitch: 0.2,
+    entries: {
+      // Coming back out of the Crownkeep: just outside the gate, facing the bridge.
+      gate: { pos: new THREE.Vector3(GX - 7, 0, 0), yaw: Math.PI / 2, pitch: 0.12 },
+    },
+    portals,
     lanternIntensity: 3,
     env: {
-      fog: { color: 0x2a1736, density: 0.0052 },
+      fog: { color: 0x170d20, density: 0.0052 },
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
       dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 45, target: new THREE.Vector3(-10, 0, 0) },
     },
-    update(dt, t) {
+    update(dt, t, ctx) {
       flickerTorches(torches, t);
-      for (const a of animated) a.update(dt, t);
+      // Open the gate when the monk comes near; close it when he leaves.
+      const near = ctx && Math.hypot(ctx.player.x - GX, ctx.player.z) < 16;
+      for (const l of leaves) {
+        l.open += ((near ? 1 : 0) - l.open) * Math.min(1, dt * 1.6);
+        l.hinge.rotation.y = -l.sz * l.open * 1.45;
+      }
+      for (const a of animated) a.update(dt, t, ctx?.player);
       water.material.map.offset.set(t * 0.004, t * 0.01);
       for (const g of guards) {
         g.root.position.x += g.dir * g.speed * dt;
@@ -526,6 +575,159 @@ function buildZone() {
         const { x, z } = g.root.position;
         Object.assign(g.col, { minX: x - 0.3, maxX: x + 0.3, minZ: z - 0.3, maxZ: z + 0.3, h: 2.1 });
       }
+    },
+  };
+}
+
+// Market stalls around the well, props along the street edges, and townsfolk.
+function streetLife({ M, streets, squares, colliders, root, BX, inBounds }) {
+  const rnd = mulberry(2024);
+  const wood = [];
+  const iron = [];
+  const goods = [];
+  const lampFlames = [];
+  const awnings = [];
+  const AWN = [0xb43a32, 0x3a7038, 0x384c94, 0xb88a2a, 0x84386c];
+  const awnMat = (hex) => new THREE.MeshLambertMaterial({ map: tex.awning(), color: hex, side: THREE.DoubleSide });
+  const goodsMat = new THREE.MeshLambertMaterial({ map: tex.flowerBox() });
+  const place = (g, x, z, rot) => g.rotateY(rot).translate(x, 0, z);
+
+  // Market stalls in a ring around the well, facing it.
+  const sq = squares[0];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.3;
+    const x = sq.x + Math.cos(a) * 9.2;
+    const z = sq.z + Math.sin(a) * 9.2;
+    const rot = Math.atan2(sq.x - x, sq.z - z); // local +z faces the well
+    wood.push(place(boxGeo(2.6, 0.9, 1.0, 0, 0.45, 0.2, 0, 1), x, z, rot));
+    for (const [px, pz] of [[-1.25, -0.5], [1.25, -0.5], [-1.25, 0.65], [1.25, 0.65]]) wood.push(place(boxGeo(0.1, pz < 0 ? 2.5 : 2.1, 0.1, px, pz < 0 ? 1.25 : 1.05, pz, 0, 1), x, z, rot));
+    goods.push(place(boxGeo(2.3, 0.2, 0.75, 0, 1.0, 0.2, 0, 1), x, z, rot));
+    const aw = new THREE.PlaneGeometry(3, 1.6);
+    aw.rotateX(-Math.PI / 2 + 0.3);
+    aw.translate(0, 2.3, 0.1);
+    const awm = new THREE.Mesh(aw, awnMat(AWN[i % AWN.length]));
+    awm.rotation.y = rot;
+    awm.position.set(x, 0, z);
+    root.add(awm);
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    colliders.push({ cx: x + 0.2 * s, cz: z + 0.2 * c, hx: 1.4, hz: 0.75, rot });
+    for (let k = 0; k < 3; k++) wood.push(place(boxGeo(0.6, 0.6, 0.6, -0.8 + k * 0.8, 0.3, -1.0, rnd() * 0.4, 1), x, z, rot));
+  }
+
+  // Props along the edges of the streets.
+  const near = (x, z) => squares.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + 2) || (Math.abs(z) < 8 && x > -BX - 12 && x < BX + 4) || x > 90;
+  for (const s of streets) {
+    let side = 1;
+    for (const [[ax, az], [bx, bz]] of s.segs) {
+      const len = Math.hypot(bx - ax, bz - az);
+      const ux = (bx - ax) / len;
+      const uz = (bz - az) / len;
+      for (let t = 6 + rnd() * 6; t < len - 6; t += 11 + rnd() * 8) {
+        side = -side;
+        const off = s.halfWidth - 0.8;
+        const x = ax + ux * t - uz * off * side;
+        const z = az + uz * t + ux * off * side;
+        if (!inBounds(x, z) || near(x, z)) continue;
+        const rot = Math.atan2(ux, uz);
+        const kind = Math.floor(rnd() * 5);
+        if (kind === 0) {
+          // A cluster of barrels.
+          for (const [dx, dz] of [[0, 0], [0.62, 0.1], [0.3, -0.55]]) {
+            const g = new THREE.CylinderGeometry(0.3, 0.27, 0.85, 8);
+            g.translate(dx, 0.43, dz);
+            wood.push(place(g, x, z, rot));
+          }
+          colliders.push({ minX: x - 0.7, maxX: x + 0.9, minZ: z - 0.9, maxZ: z + 0.7, h: 1 });
+        } else if (kind === 1) {
+          // Stacked crates.
+          wood.push(place(boxGeo(0.8, 0.8, 0.8, 0, 0.4, 0, 0, 1), x, z, rot));
+          wood.push(place(boxGeo(0.7, 0.7, 0.7, 0.05, 1.15, 0.05, 0.3, 1), x, z, rot));
+          wood.push(place(boxGeo(0.6, 0.6, 0.6, 0.7, 0.3, 0.1, 0.5, 1), x, z, rot));
+          colliders.push({ minX: x - 0.6, maxX: x + 1.1, minZ: z - 0.6, maxZ: z + 0.6, h: 1.5 });
+        } else if (kind === 2) {
+          // A hand cart.
+          wood.push(place(boxGeo(1.1, 0.4, 1.8, 0, 0.75, 0, 0, 1), x, z, rot));
+          wood.push(place(boxGeo(0.08, 0.08, 1.4, -0.4, 0.7, 1.4, 0, 1), x, z, rot));
+          wood.push(place(boxGeo(0.08, 0.08, 1.4, 0.4, 0.7, 1.4, 0, 1), x, z, rot));
+          for (const sd of [-1, 1]) {
+            const wh = new THREE.CylinderGeometry(0.45, 0.45, 0.08, 10);
+            wh.rotateZ(Math.PI / 2);
+            wh.translate(sd * 0.62, 0.45, -0.1);
+            iron.push(place(wh, x, z, rot));
+          }
+          goods.push(place(boxGeo(0.9, 0.2, 1.4, 0, 1.05, 0, 0, 1), x, z, rot));
+          colliders.push({ cx: x, cz: z, hx: 0.75, hz: 1.4, rot: rot, h: 1.2 });
+        } else if (kind === 3) {
+          // A bench.
+          wood.push(place(boxGeo(1.8, 0.08, 0.45, 0, 0.48, 0, 0, 1), x, z, rot + Math.PI / 2));
+          for (const dx of [-0.75, 0.75]) wood.push(place(boxGeo(0.1, 0.45, 0.4, dx, 0.23, 0, 0, 1), x, z, rot + Math.PI / 2));
+          colliders.push({ cx: x, cz: z, hx: 0.95, hz: 0.3, rot: rot + Math.PI / 2, h: 0.6 });
+        } else {
+          // An iron lamp post with a glowing lantern.
+          const p = new THREE.CylinderGeometry(0.07, 0.1, 3.2, 6);
+          p.translate(0, 1.6, 0);
+          iron.push(place(p, x, z, 0));
+          iron.push(place(boxGeo(0.5, 0.06, 0.06, 0.22, 3.15, 0, 0, 1), x, z, rot));
+          const lan = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 0.24), M.lit);
+          const c = Math.cos(rot);
+          const sn = Math.sin(rot);
+          lan.position.set(x + 0.42 * c, 2.9, z - 0.42 * sn);
+          root.add(lan);
+          const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.flame(), fog: true }));
+          f.position.set(x + 0.42 * c, 2.93, z - 0.42 * sn);
+          root.add(f);
+          lampFlames.push({ flame: f, light: null, base: 0, phase: rnd() * 9, flameScale: 0.35 });
+          colliders.push({ minX: x - 0.2, maxX: x + 0.2, minZ: z - 0.2, maxZ: z + 0.2 });
+        }
+      }
+    }
+  }
+  root.add(mergedMesh(wood, M.wood, { cast: true }));
+  root.add(mergedMesh(iron, M.iron));
+  root.add(mergedMesh(goods, goodsMat));
+  void awnings;
+
+  // Townsfolk walking the streets and gathered around the market.
+  const crowd = createCrowd({ root, colliders, floors: [] });
+  const pr = mulberry(31337);
+  const C = PALETTES.commoner;
+  const folk = () => {
+    const outfit = pr() < 0.45 ? 'servant' : pr() < 0.5 ? 'gown' : 'doublet';
+    const hat = ['none', 'hood', 'coif', 'cap', 'chaperon'][Math.floor(pr() * 5)];
+    const carry = pr() < 0.4 ? ['basket', 'basket', 'scroll'][Math.floor(pr() * 3)] : null;
+    return createPerson({ rnd: pr, outfit, hat, carry, main: C[Math.floor(pr() * C.length)] });
+  };
+  const routes = [
+    [[-36, -2], [-55, -9], [-90, -12], [-125, -14]],
+    [[-40, -40], [-70, -36], [-105, -33], [-140, -38]],
+    [[-92, -33], [-90, -12], [-92, 20], [-105, 46]],
+    [[-80, 30], [-105, 46], [-130, 60]],
+    [[-20, 52], [-48, 64], [-82, 84]],
+    [[30, 1.2], [60, 1.5], [86, 1.2]],
+    [[45, -68], [55, -30], [60, -2], [66, 40], [78, 76]],
+    streets[8].points.filter(([, z]) => z > -70 && z < -12),
+    streets[10].points.filter(([, z]) => z > -60 && z < -10),
+    streets[10].points.filter(([, z]) => z > 10 && z < 70),
+  ];
+  for (const path of routes) if (path.length > 1) crowd.add(folk(), { path, speed: 0.75 + pr() * 0.5, wait: 2 + pr() * 4 });
+  // A slow loop around the well.
+  const loop = Array.from({ length: 10 }, (_, i) => [sq.x + Math.cos((i / 10) * Math.PI * 2) * 5.6, sq.z + Math.sin((i / 10) * Math.PI * 2) * 5.6]);
+  crowd.add(folk(), { path: loop, loop: true, speed: 0.6, wait: 0 });
+  // Merchants behind their stalls and gossips by the well.
+  for (let i = 0; i < 6; i += 2) {
+    const a = (i / 6) * Math.PI * 2 + 0.3;
+    const x = sq.x + Math.cos(a) * 10.4;
+    const z = sq.z + Math.sin(a) * 10.4;
+    crowd.add(folk(), { pos: [x, z], facing: faceToward(x, z, sq.x, sq.z), mode: 'talk' });
+  }
+  crowd.add(folk(), { pos: [sq.x - 2.4, sq.z - 2.2], facing: faceToward(sq.x - 2.4, sq.z - 2.2, sq.x - 1.2, sq.z - 3.1), mode: 'talk' });
+  crowd.add(folk(), { pos: [sq.x - 1.2, sq.z - 3.1], facing: faceToward(sq.x - 1.2, sq.z - 3.1, sq.x - 2.4, sq.z - 2.2), mode: 'idle' });
+
+  return {
+    update(dt, t, player) {
+      flickerTorches(lampFlames, t);
+      crowd.update(dt, t, player);
     },
   };
 }
