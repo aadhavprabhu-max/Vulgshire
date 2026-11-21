@@ -505,6 +505,134 @@ export const tex = {
         { repeat: false },
       );
     }),
+  // ---- Crownkeep interior (128 px, more detail) ----------------------------
+  // Polished veined marble slabs. variant 0 = near-black, 1 = grey-violet, 2 = oxblood (balustrades).
+  marble: (variant = 0) =>
+    cached('marble' + variant, () => {
+      const r = rng(131 + variant);
+      const base = [[44, 40, 50], [96, 92, 104], [86, 34, 36]][variant];
+      const vein = [[118, 112, 126], [170, 166, 176], [170, 120, 110]][variant];
+      const ph = r() * 10;
+      return toTexture(paint(128, 128, (x, y) => {
+        const n = Math.sin(x * 0.06 + 2.6 * Math.sin(y * 0.045 + ph) + 1.7 * Math.sin((x + y) * 0.021 + ph * 2));
+        const v = Math.max(0, 1 - Math.abs(n) / 0.07);
+        const n2 = Math.sin(y * 0.09 + 3 * Math.sin(x * 0.03 + ph * 3));
+        const v2 = Math.max(0, 1 - Math.abs(n2) / 0.04) * 0.5;
+        const k = 0.9 + r() * 0.14;
+        const t = Math.min(1, v + v2);
+        let c = base.map((b, i) => (b + (vein[i] - b) * t) * k);
+        if (x % 64 === 0 || y % 64 === 0) c = c.map((q) => q * 0.55); // slab joints
+        else if (x % 64 === 1 || y % 64 === 1) c = c.map((q) => q * 1.12); // bevel highlight
+        return c.map(clamp255);
+      }));
+    }),
+  // Two-tone marble floor (dark / grey checker, 1 m tiles at 2 m per repeat).
+  marbleFloor: () =>
+    cached('marbleFloor', () => {
+      const r = rng(137);
+      const ph = 3.3;
+      return toTexture(paint(128, 128, (x, y) => {
+        const dark = (Math.floor(x / 64) + Math.floor(y / 64)) % 2 === 0;
+        const base = dark ? [34, 32, 40] : [74, 70, 80];
+        const vein = dark ? [74, 70, 84] : [116, 112, 124];
+        const n = Math.sin(x * 0.07 + 2.2 * Math.sin(y * 0.05 + ph) + (dark ? 4 : 0));
+        const t = Math.max(0, 1 - Math.abs(n) / 0.06);
+        let c = base.map((b, i) => (b + (vein[i] - b) * t) * (0.9 + r() * 0.14));
+        if (x % 64 === 0 || y % 64 === 0) c = c.map((q) => q * 0.5);
+        return c.map(clamp255);
+      }));
+    }),
+  // Circular inlaid floor medallion: knotwork bands, a stepped meander and an 8-point star.
+  medallion: () =>
+    cached('medallion', () => {
+      const S = 128;
+      const r = rng(139);
+      const dark = [52, 42, 38];
+      const light = [138, 116, 92];
+      const lead = [24, 20, 20];
+      return toTexture(
+        paint(S, S, (x, y) => {
+          const dx = x + 0.5 - S / 2;
+          const dy = y + 0.5 - S / 2;
+          const d = Math.hypot(dx, dy) / (S / 2);
+          const a = Math.atan2(dy, dx);
+          if (d > 1) return [0, 0, 0, 0];
+          const k = 0.88 + r() * 0.16;
+          const sh = (c) => c.map((q) => clamp255(q * k)).concat(255);
+          if (d > 0.96) return sh(lead);
+          if (d > 0.8) {
+            // Knot band: two interleaved sine strands.
+            const u = a * 12;
+            const w = (d - 0.88) / 0.07;
+            const s1 = Math.abs(w - Math.sin(u)) < 0.35;
+            const s2 = Math.abs(w + Math.sin(u)) < 0.35;
+            if (s1 || s2) return sh(light);
+            return sh(dark);
+          }
+          if (d > 0.77) return sh(lead);
+          if (d > 0.55) {
+            // Stepped meander (Greek-key-ish) band.
+            const u = ((a / (Math.PI * 2)) * 40 + 40) % 1;
+            const w = (d - 0.55) / 0.22;
+            const on = (u < 0.5 && w < 0.7 && w > 0.2) || (u >= 0.5 && (w > 0.7 || w < 0.3));
+            return sh(on ? light : dark);
+          }
+          if (d > 0.52) return sh(lead);
+          // 8-point star on dark ground.
+          const ang = Math.abs(((a / (Math.PI * 2)) * 8 + 8) % 1 - 0.5) * 2; // 0 at point, 1 between
+          const star = d < 0.48 * (0.45 + 0.55 * (1 - ang));
+          if (d < 0.08) return sh(lead);
+          return sh(star ? light : dark);
+        }),
+        { repeat: false },
+      );
+    }),
+  velvet: () =>
+    cached('velvet', () => {
+      const r = rng(149);
+      return toTexture(paint(32, 64, (x, y) => {
+        const fold = 0.72 + 0.28 * Math.sin(x * 0.8) ** 2;
+        const hem = y > 58 ? 1.6 : 1;
+        return shade(y > 58 ? [150, 110, 50] : [112, 18, 24], (fold * (0.92 + r() * 0.12)) / (y > 58 ? hem : 1));
+      }));
+    }),
+  books: () =>
+    cached('books', () => {
+      const r = rng(151);
+      const cols = [[96, 30, 28], [40, 62, 44], [70, 52, 34], [34, 40, 72], [110, 84, 46], [60, 30, 50], [90, 86, 70]];
+      const rows = [];
+      for (let row = 0; row < 4; row++) {
+        const spines = [];
+        let x = 0;
+        while (x < 64) {
+          const w = 2 + Math.floor(r() * 3);
+          spines.push({ x, w, c: cols[Math.floor(r() * cols.length)], h: 9 + Math.floor(r() * 5), lean: r() < 0.06 });
+          x += w;
+        }
+        rows.push(spines);
+      }
+      return toTexture(paint(64, 64, (x, y) => {
+        const row = Math.floor(y / 16);
+        const ly = y % 16;
+        if (ly >= 14) return shade([58, 40, 26], 1 + (ly === 14 ? 0.2 : 0)); // shelf board
+        const sp = rows[row].find((s) => x >= s.x && x < s.x + s.w);
+        if (!sp || 14 - ly > sp.h) return [16, 12, 10]; // dark back of the shelf
+        let k = x === sp.x ? 0.6 : 1;
+        if (ly === 14 - sp.h + 2 || ly === 11) k *= 1.35; // gilt bands
+        return shade(sp.c, k * (0.9 + r() * 0.15));
+      }));
+    }),
+  brickWarm: () => cached('brickWarm', () => toTexture(blocks(64, 64, 8, 12, 18, [150, 104, 72], 157, { vary: 0.2, mortar: 0.55 }))),
+  hallStone: () => cached('hallStone', () => toTexture(blocks(128, 128, 16, 22, 46, [86, 86, 98], 163, { vary: 0.18, noise: 0.12, mortar: 0.45 }))),
+  globe: () =>
+    cached('globe', () => {
+      const r = rng(167);
+      return toTexture(paint(64, 32, (x, y) => {
+        const land = Math.sin(x * 0.3) * Math.sin(y * 0.45 + 1) + Math.sin(x * 0.11 + y * 0.2) > 0.6;
+        if (x % 8 === 0 || y % 8 === 0) return [70, 50, 30];
+        return shade(land ? [150, 120, 70] : [70, 84, 80], 0.85 + r() * 0.2);
+      }));
+    }),
   // Light shaft: bright core fading to the edges and toward the floor end.
   shaft: () =>
     cached('shaft', () =>
