@@ -1,0 +1,179 @@
+{
+  "_note": "The Ancient Underground. Names approved by the owner. mapPx = map pixels on reference/maps/vulgshire-topdown-FINAL.png. Only open lines are built; the rest show on the map. Station look follows reference/metro-station-designs.webp (style).",
+  "lines": [
+    {
+      "id": "I",
+      "key": "purple",
+      "numeral": "I",
+      "name": "Via Regia",
+      "colour": "#a060f0",
+      "open": false
+    },
+    {
+      "id": "II",
+      "key": "orange",
+      "numeral": "II",
+      "name": "The Pilgrim's Way",
+      "colour": "#ff9f1c",
+      "open": true
+    },
+    {
+      "id": "III",
+      "key": "black",
+      "numeral": "III",
+      "name": "The Ironwall",
+      "colour": "#262626",
+      "open": false
+    },
+    {
+      "id": "IV",
+      "key": "darkblue",
+      "numeral": "IV",
+      "name": "The Sunken Road",
+      "colour": "#2040e0",
+      "open": false
+    },
+    {
+      "id": "V",
+      "key": "cyan",
+      "numeral": "V",
+      "name": "The Isle Passage",
+      "colour": "#10a0ff",
+      "open": false
+    },
+    {
+      "id": "VI",
+      "key": "yellow",
+      "numeral": "VI",
+      "name": "The Lamplighters' Road",
+      "colour": "#e8d800",
+      "open": false
+    },
+    {
+      "id": "VII",
+      "key": "red",
+      "numeral": "VII",
+      "name": "The Old Southway",
+      "colour": "#e81a20",
+      "open": false
+    },
+    {
+      "id": "VIII",
+      "key": "green",
+      "numeral": "VIII",
+      "name": "The Mossway",
+      "colour": "#10b050",
+      "open": false
+    },
+    {
+      "id": "IX",
+      "key": "paleblue",
+      "numeral": "IX",
+      "name": "The Mariners' Road",
+      "colour": "#c8dcec",
+      "open": false
+    }
+  ],
+  "stations": [
+    {
+      "id": "triflumen",
+      "name": "Triflumen",
+      "line": "II",
+      "interchange": true,
+      "mapPx": [
+        605,
+        340
+      ],
+      "style": "grandhall",
+      "label": [
+        -14,
+        6
+      ]
+    },
+    {
+      "id": "northern-quays",
+      "name": "Northern Quays",
+      "line": "II",
+      "mapPx": [
+        762,
+        310
+      ],
+      "style": "sewers",
+      "label": [
+        10,
+        6
+      ]
+    },
+    {
+      "id": "crownkeep-stair",
+      "name": "Crownkeep Stair",
+      "line": "II",
+      "mapPx": [
+        878,
+        246
+      ],
+      "style": "castle",
+      "label": [
+        -12,
+        -8
+      ]
+    },
+    {
+      "id": "great-cathedral",
+      "name": "The Great Cathedral",
+      "line": "II",
+      "mapPx": [
+        935,
+        150
+      ],
+      "style": "cathedral",
+      "label": [
+        -12,
+        -22
+      ]
+    },
+    {
+      "id": "ashenwood-gate",
+      "name": "Ashenwood Gate",
+      "line": "II",
+      "mapPx": [
+        990,
+        178
+      ],
+      "style": "fortress",
+      "label": [
+        12,
+        -8
+      ]
+    },
+    {
+      "id": "belfry-row",
+      "name": "Belfry Row",
+      "line": "II",
+      "mapPx": [
+        1008,
+        250
+      ],
+      "style": "crypt",
+      "label": [
+        12,
+        -8
+      ]
+    },
+    {
+      "id": "merchants-quarter",
+      "name": "Merchants' Quarter",
+      "line": "II",
+      "interchange": true,
+      "mapPx": [
+        1098,
+        319
+      ],
+      "style": "citadel",
+      "label": [
+        12,
+        6
+      ]
+    }
+  ]
+}
