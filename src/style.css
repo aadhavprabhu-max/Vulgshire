@@ -14,3 +14,7 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
 #hud .title { letter-spacing: 0.18em; color: #e8d7ae; font-size: 14px; }
 #hud .toast { color: #f0c27a; min-height: 1.5em; }
 #hud.hidden { opacity: 0; }
+
+/* Zone transition fade */
+#fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.4s; }
+#fade.on { opacity: 1; }
