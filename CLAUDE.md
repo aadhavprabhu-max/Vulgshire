@@ -53,10 +53,15 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - `src/scenes/fx.js`: blocky smoke columns, ember particles, roof fires.
 - `src/scenes/cloister.js` (ref 01), `rooftop.js` (ref 02), `bridge.js` (ref 03), `crownkeep.js` (interiors refs), `cathedral.js` (ref 04).
 - Scene contract extras: `floors` (walkable surfaces: flat `{minX,maxX,minZ,maxZ,y}` or ramps `{...,y0,y1,axis}`), `portals` (`{minX,maxX,minZ,maxZ,maxY?,to,entry}`), and `entries` (named arrival points `{pos,yaw,pitch}`).
-- `src/characters/`: NPCs: `guard.js` (horned helm, spear) and `alchemist.js` (green striped robe).
+- `src/characters/`: NPCs: `guard.js` (horned helm, spear), `alchemist.js` (green striped robe), `people.js` (original character kit: gowns, robes, doublets, servants, priests, heralds; hats; carried items; idle / talk / read / pray poses) and `crowd.js` (walks NPCs along waypoints, follows floors and stairs, gives way to the player, gives them colliders).
+- `src/player/floors.js`: walkable-surface maths shared by the player and NPCs.
 - `src/player/`: `monk.js` (model, lantern, animation), `controller.js` (third-person camera, movement, collision).
 - `src/data/world.js`: world names, map positions and the three-rivers rule check (`validateWorld`).
 - `src/ui/hud.js`: the small iron-framed HUD.
+
+## Sky
+
+- There is no sky dome. Outdoor scenes use a seamless equirectangular night sky as `scene.background` (`tex.nightSky(horizon)`, 2048 px so stars stay crisp), plus moon and halo sprites (`buildSky({ moonDir, moonSize, horizon })`). `horizon` matches the scene's fog colour.
 
 ## Rendering notes (Milestone 1)
 
@@ -90,6 +95,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - Original design inspired by the mood references in `reference/interiors/` plus real halls: the medieval great hall's raised dais, the Palais Garnier's split ceremonial staircase, and the looping ribbed vault of Prague Castle's Vladislav Hall.
 - Coordinates: x = east (you enter from the west door), z = south. `GL = 6.5` is the upper floor.
 - **Grand Stair Hall** (x 0–28): a central flight up to a landing, two flights up to the east gallery, two-storey arcades with balustraded galleries, torchères, a tiered chandelier.
+- **The court:** 17 NPCs. Walkers: a servant carrying a tray up and down the grand stairs, a guard patrolling the galleries, a lady strolling, a noble circling the hall, a candle-bearer. Standing: nobles talking, a scribe reading by the library, a priest praying near the throne, heralds, gossips at the warm doorway.
 - **Great Hall** (x 28–90, on the upper floor): a ribbed vault with looping ribs, moonbeams through the south lancets, a rose window over two rows of lancets, the dais with an **empty throne** (who sits there is undecided lore), the library gallery, a warm brick doorway, an inlaid floor medallion, chandeliers, and two guards at the door.
 - Exits: the west door goes back to the castle gate (`bridge`, entry `gate`).
 - Colliders use levels (`y0`/`y1`) so balustrades only block on their floor; floors handle the stairs.
@@ -97,6 +103,10 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 ## Buildings (`src/scenes/buildings.js`, `town.js`)
 
 - Archetypes: `gable`, `stepped` (crow-stepped gable), `long` (eaves to the street, dormers), `jetty` (overhanging half-timbered upper floors), `hip` (merchant house), `tower` (tower house), `shop` (awning and display window), `church`. Each also varies in size, pastel plaster colour, roof material and tint, chimneys, doors and lit windows.
+- Detail level `high` (walkable streets) adds: stone sills, lintels and jambs on windows; painted shutters (some closed); flower boxes; stone door surrounds with steps; door lanterns; plinths; corner quoins; string courses; ridge caps; chimney pots; carved brackets under jetties; oriel (bay) windows; wooden balconies; shop signs. Skylines use `low`.
+- 128 px textures: weathered lime plaster (3 m repeat), three timber-frame patterns sized to one 3 m storey, moss-flecked clay tiles and slates, town ashlar.
+- The town has street life: market stalls around the well, barrels, crates, carts, benches, lamp posts, and about 16 townsfolk (`streetLife()` in `bridge.js`).
+- Render stats: `window.__vulgshire.info` gives the scene pass's triangles and draw calls. The town is about 490k triangles and 700 calls.
 - `lotsAlongStreets()` lines streets with buildings whose fronts face the street, then fills the blocks behind them. `buildTown()` scatters buildings for distant skylines. Everything is merged per material, with colour stored in vertex colours.
 
 ## Notes on the references
