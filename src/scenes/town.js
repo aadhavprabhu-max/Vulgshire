@@ -16,7 +16,7 @@ const pickType = (rnd, churchChance, towerBias = 0) => {
 /** Scatter varied houses in a rectangle (skylines, distant districts). */
 export function buildTown({ seed, count, bounds, groundY = () => 0, avoid = () => false, minW = 5, maxW = 9, litChance = 0.32, spireChance = 0.05, towerBias = 0.06, collide = false }) {
   const rnd = mulberry(seed);
-  const set = new BuildingSet(seed + 1, { litChance });
+  const set = new BuildingSet(seed + 1, { litChance, detail: 'low' }); // distant skyline: fewer details
   const [x0, x1, z0, z1] = bounds;
   const placed = [];
   let tries = 0;
