@@ -7,6 +7,7 @@ import { createChunkedTown } from './chunks.js';
 import { buildStation, buildCathedralExterior, buildGuildhall } from './landmarks.js';
 import { signTex } from './metro.js';
 import { createTrain, TRAIN_L } from './train.js';
+import { createMetroLine, bendGroup, bendBox } from './metroline.js';
 import METRO from '../data/metro.json';
 import { smokeColumn, embers } from './fx.js';
 import { buildCastle } from './castle.js';
@@ -355,43 +356,47 @@ function buildZone() {
       landmarks.push({ footprint: [x - 4, x + 4, z - 4, z + 7] });
     }
   }
-  // The rail viaduct over the north river, where the Pilgrim's Way runs in the open.
+  // The rail viaduct over the north river, on the Pilgrim's Way's real curve.
   const viaduct = (() => {
-    const vz = 118;
-    let xa = null;
-    let xb = null;
-    for (let x = -40; x < 180; x += 0.5) {
-      if (T.isWater(x, vz)) {
-        if (xa === null) xa = x;
-        xb = x;
-      } else if (xa !== null && xb !== null && x - xb > 6) break;
-    }
-    if (xa === null) return null;
-    xa -= 9;
-    xb += 9;
-    const len = xb - xa;
-    const deck = [];
-    deck.push(boxGeo(len, 1.4, 6.2, (xa + xb) / 2, 3.3, vz, 0, 2));
-    for (const sz of [-1, 1]) deck.push(boxGeo(len, 1.1, 0.4, (xa + xb) / 2, 4.55, vz + sz * 2.9, 0, 1));
-    const n = Math.max(2, Math.round(len / 14));
-    for (let k = 0; k <= n; k++) deck.push(boxGeo(2.2, 8, 3.2, xa + (len * k) / n, -1.5, vz, 0, 1));
-    // Tunnel portals in the banks at both ends.
-    for (const ex of [xa - 3, xb + 3]) {
-      deck.push(boxGeo(6, 7, 9, ex, 3.5, vz, 0, 1));
-    }
-    root.add(mergedMesh(deck, M.stone, { cast: true }));
-    for (const ex of [xa, xb]) {
+    const route = createMetroLine('II');
+    const S0 = 140;
+    const S1 = 196;
+    const RY = 4.0; // rail height on the viaduct
+    const lr = new THREE.Group();
+    const deck = [boxGeo(S1 - S0, 1.4, 6.2, (S0 + S1) / 2, RY - 0.7, 0, 0, 2)];
+    for (const sd of [-1, 1]) deck.push(boxGeo(S1 - S0, 1.1, 0.4, (S0 + S1) / 2, RY + 0.55, sd * 2.9, 0, 1));
+    for (let k = 0; k <= 4; k++) deck.push(boxGeo(2.2, RY + 4, 3.2, S0 + ((S1 - S0) * k) / 4, (RY - 4) / 2 - 0.7, 0, 0, 1));
+    for (const [a, b] of [
+      [S0 - 6, S0],
+      [S1, S1 + 6],
+    ])
+      deck.push(boxGeo(b - a, RY + 3.5, 9, (a + b) / 2, (RY + 3.5) / 2, 0, 0, 1));
+    lr.add(mergedMesh(deck, M.stone, { cast: true }));
+    const rails = [];
+    for (const rz of [-0.72, 0.72]) rails.push(boxGeo(S1 - S0, 0.16, 0.12, (S0 + S1) / 2, RY + 0.22, rz, 0, 1));
+    lr.add(mergedMesh(rails, M.iron));
+    for (const [sx, rot] of [
+      [S0 + 0.02, -Math.PI / 2],
+      [S1 - 0.02, Math.PI / 2],
+    ]) {
       const mouth = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 4), new THREE.MeshBasicMaterial({ color: 0x050404 }));
-      mouth.rotation.y = ex === xa ? Math.PI / 2 : -Math.PI / 2;
-      mouth.position.set(ex === xa ? xa - 0.02 : xb + 0.02, 6, vz);
-      root.add(mouth);
+      mouth.rotation.y = rot;
+      mouth.position.set(sx, RY + 2, 0);
+      lr.add(mouth);
     }
-    colliders.push({ minX: xa - 6.5, maxX: xa + 0.5, minZ: vz - 5, maxZ: vz + 5 }, { minX: xb - 0.5, maxX: xb + 6.5, minZ: vz - 5, maxZ: vz + 5 });
-    landmarks.push({ footprint: [xa - 8, xb + 8, vz - 9, vz + 9] });
+    const bent = bendGroup(route, lr);
+    root.add(bent.group);
+    for (const b of [
+      { minX: S0 - 6.5, maxX: S0 + 0.3, minZ: -5, maxZ: 5 },
+      { minX: S1 - 0.3, maxX: S1 + 6.5, minZ: -5, maxZ: 5 },
+    ])
+      colliders.push(...bendBox(route, b));
+    const pts = [];
+    for (let s2 = S0 - 8; s2 <= S1 + 8; s2 += 4) for (const d of [-6, 6]) pts.push(route.toWorld(s2, d));
+    landmarks.push({ footprint: [Math.min(...pts.map((q) => q[0])), Math.max(...pts.map((q) => q[0])), Math.min(...pts.map((q) => q[1])), Math.max(...pts.map((q) => q[1]))] });
     const train = createTrain();
-    train.group.position.set(xa - 60, 4.0, vz);
     root.add(train.group);
-    return { train, xa, xb, vz, t: 0 };
+    return { train, route, S0, S1, RY, t: 0 };
   })();
   const paving = streets.map((s) => streetGeometry(s, 0.015));
   for (const q of squares) {
@@ -609,11 +614,15 @@ function buildZone() {
       if (viaduct) {
         viaduct.t = (viaduct.t + dt) % 80;
         const ph = viaduct.t % 40;
-        const span = viaduct.xb - viaduct.xa + TRAIN_L + 20;
         const k = Math.min(1, ph / 14);
-        const x = viaduct.t < 40 ? viaduct.xa - TRAIN_L / 2 - 10 + span * k : viaduct.xb + TRAIN_L / 2 + 10 - span * k;
-        viaduct.train.group.position.x = x;
-        viaduct.train.group.visible = ph < 14;
+        const a = viaduct.S0 - TRAIN_L / 2 - 6;
+        const b = viaduct.S1 + TRAIN_L / 2 + 6;
+        const sc = viaduct.t < 40 ? a + (b - a) * k : b - (b - a) * k;
+        viaduct.train.placeOnCurve(viaduct.route.frame, sc, viaduct.RY);
+        for (const car of viaduct.train.cars) {
+          const cs = sc + car.offset;
+          car.group.visible = ph < 14 && cs > viaduct.S0 - 3 && cs < viaduct.S1 + 3;
+        }
       }
       // Stream detailed houses near the player; far ones stay simple.
       if (ctx?.player) {

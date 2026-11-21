@@ -169,11 +169,13 @@ export function createTrain() {
   group.name = 'train';
   const doorsL = []; // platform-side (-z) door panels that slide open
   const blockers = [];
+  const cars = []; // { group, offset } so each car can follow a curved track
   for (let k = 0; k < 3; k++) {
     const car = new THREE.Group();
     const cx = -TRAIN_L / 2 + CAR_L / 2 + k * (CAR_L + GAP);
     car.position.x = cx;
     group.add(car);
+    cars.push({ group: car, offset: cx });
     const head = k === 2;
     const tail = k === 0;
     // Body shell: materials per face [+x, -x, +y, -y, +z, -z].
@@ -261,6 +263,22 @@ export function createTrain() {
   return {
     group,
     blockers,
+    cars,
+    lights: { inner, head },
+    /** Place every car on a curve: frame(s) -> {x, z, rot}; s = train centre; y = rail height. */
+    placeOnCurve(frame, s, y = 0) {
+      group.position.set(0, 0, 0);
+      group.rotation.set(0, 0, 0);
+      for (const c of cars) {
+        const f = frame(s + c.offset);
+        c.group.position.set(f.x, y, f.z);
+        c.group.rotation.y = f.rot;
+      }
+      const fi = frame(s);
+      inner.position.set(fi.x, y + FLOOR + 2.4, fi.z);
+      const fh = frame(s + TRAIN_L / 2 + 2);
+      head.position.set(fh.x, y + FLOOR + 1, fh.z);
+    },
     /** 0 = closed, 1 = open (platform side). */
     setDoors(v) {
       open = v;
