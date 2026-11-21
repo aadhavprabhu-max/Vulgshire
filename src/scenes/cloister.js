@@ -388,11 +388,21 @@ function buildCloister() {
     torches.push(t);
   }
 
+  {
+    const exit = new THREE.Mesh(lancet(2.2, 3.4, new THREE.MeshBasicMaterial({ color: 0x1c140e })).geometry, new THREE.MeshBasicMaterial({ color: 0x1c140e }));
+    exit.rotation.y = Math.PI / 2;
+    exit.position.set(-C + 0.02, 0, 0);
+    root.add(exit);
+  }
+
   return {
     root,
     sky: buildSky({ moonDir: MOON_DIR, moonSize: 34, horizon: 0x0c1228 }),
     colliders,
     cameraBlockers,
+    entries: { door: { pos: new THREE.Vector3(-8.5, 0, 0), yaw: -Math.PI / 2, pitch: 0.15 } },
+    // A door in the west walk leads back out beside the cathedral.
+    portals: [{ minX: -C - 0.5, maxX: -C + 0.75, minZ: -1.4, maxZ: 1.4, to: 'bridge', entry: 'cloister' }],
     spawn: new THREE.Vector3(0.2, 0, 4.4),
     spawnYaw: -0.5,
     spawnPitch: 0.22,

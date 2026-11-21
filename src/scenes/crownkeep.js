@@ -18,8 +18,8 @@ import { createCrowd, faceToward } from '../characters/crowd.js';
 //  - Great Hall: x 28..90, z -9..9, floor y = GL, ribbed vault above.
 
 const GL = 6.5; // gallery / Great Hall floor level
-const SH = { x0: 0, x1: 28, hz: 14, h: 20 };
-const GH = { x0: 28, x1: 90, hz: 9, spring: GL + 6, k: 0.52 };
+const SH = { x0: 0, x1: 28, hz: 14, h: 27 };
+const GH = { x0: 28, x1: 90, hz: 13, spring: GL + 10.5, k: 0.56 };
 const MOON = new THREE.Vector3(-0.25, -0.7, -0.66).normalize(); // moonbeams enter from the south windows
 
 function mats() {
@@ -463,17 +463,19 @@ function buildCrownkeep() {
     m.position.set(x, y, z);
     root.add(m);
   };
-  for (let i = 0; i < 6; i++) {
-    const z = -6.25 + i * 2.5;
-    eastGlass(lancetGeo(1.7, 4.2), gx1 - 0.03, GL + 1.2, z, M.glassCool(i));
-    eastGlass(lancetGeo(1.7, 3.6), gx1 - 0.03, GL + 5.8, z, M.glassCool(i + 10));
+  for (let i = 0; i < 8; i++) {
+    const z = -8.75 + i * 2.5;
+    eastGlass(lancetGeo(1.8, 4.4), gx1 - 0.03, GL + 1.4, z, M.glassCool(i));
+    eastGlass(lancetGeo(1.8, 4.0), gx1 - 0.03, GL + 6.4, z, M.glassCool(i + 10));
   }
-  eastGlass(new THREE.CircleGeometry(3.4, 20), gx1 - 0.03, GL + 12.6, 0, M.rose);
+  eastGlass(new THREE.CircleGeometry(5.2, 24), gx1 - 0.03, GL + 16.5, 0, M.rose);
+  for (const sz of [-1, 1]) eastGlass(new THREE.CircleGeometry(1.8, 16), gx1 - 0.03, GL + 12.5, sz * 7.2, M.rose);
   // Red velvet hangings flanking the windows.
   for (const sz of [-1, 1]) {
     const c = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 8), M.velvet);
     c.rotation.y = -Math.PI / 2;
-    c.position.set(gx1 - 0.08, GL + 5, sz * 8.2);
+    c.position.set(gx1 - 0.08, GL + 6, sz * 11.6);
+    c.scale.set(1.3, 1.5, 1);
     root.add(c);
   }
 
@@ -482,7 +484,7 @@ function buildCrownkeep() {
   const poolMat = new THREE.MeshBasicMaterial({ color: 0x8a96c8, map: tex.stainedGlass('purple', 7), transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
   for (let i = 0; i < nb; i++) {
     const xc = (bx[i] + bx[i + 1]) / 2;
-    const win = new THREE.Mesh(lancetGeo(2.0, 5.2), M.glassCool(20 + i));
+    const win = new THREE.Mesh(lancetGeo(2.8, 9.5), M.glassCool(20 + i));
     win.rotation.y = Math.PI;
     win.position.set(xc, GL + 0.7, ghz - 0.03);
     root.add(win);
@@ -490,17 +492,18 @@ function buildCrownkeep() {
     if (i > 0 && i % 2 === 0) {
       const b = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 4.6), new THREE.MeshLambertMaterial({ map: tex.banner(), alphaTest: 0.5, side: THREE.DoubleSide }));
       b.rotation.y = Math.PI;
-      b.position.set(bx[i], GL + 3.3, ghz - 0.32);
+      b.position.set(bx[i], GL + 5.5, ghz - 0.32);
+      b.scale.set(1.4, 1.6, 1);
       root.add(b);
     }
     if (i % 2 === 1 && i < nb - 1) {
-      const start = new THREE.Vector3(xc, GL + 4.2, ghz - 0.2);
+      const start = new THREE.Vector3(xc, GL + 7.5, ghz - 0.2);
       const t = (GL - start.y) / MOON.y;
       const end = start.clone().addScaledVector(MOON, t);
       const len = start.distanceTo(end);
       const beam = new THREE.Group();
       for (const rot of [0, Math.PI / 2]) {
-        const p = new THREE.Mesh(new THREE.PlaneGeometry(1.8, len), shaftMat);
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(2.4, len), shaftMat);
         p.rotation.y = rot;
         beam.add(p);
       }
@@ -568,9 +571,9 @@ function buildCrownkeep() {
     globe.add(mer);
     root.add(globe);
     colliders.push({ minX: 37.4, maxX: 38.6, minZ: -5.2, maxZ: -4, y0: 5 });
-    const chests = [boxGeo(1.4, 0.8, 0.8, 34.5, GL + 0.4, 7.6, 0.1, 1), boxGeo(1.1, 0.7, 0.7, 36.4, GL + 0.35, 7.9, -0.2, 1)];
+    const chests = [boxGeo(1.4, 0.8, 0.8, 34.5, GL + 0.4, 11.4, 0.1, 1), boxGeo(1.1, 0.7, 0.7, 36.4, GL + 0.35, 11.7, -0.2, 1)];
     root.add(mergedMesh(chests, M.woodDark, { cast: true }));
-    colliders.push({ minX: 33.6, maxX: 37.2, minZ: 7.1, maxZ: 8.4, y0: 5 });
+    colliders.push({ minX: 33.6, maxX: 37.2, minZ: 10.9, maxZ: 12.2, y0: 5 });
   }
   // A warm, candle-lit doorway in the north wall (like the brick arch in the reference).
   {
@@ -684,8 +687,24 @@ function buildCrownkeep() {
     root.add(cm);
   }
 
+  // Two colonnades of red marble columns down the hall, with gilded capitals.
+  {
+    const cols = [];
+    const caps = [];
+    for (let x = 36; x <= 76; x += 8) {
+      for (const sz of [-1, 1]) {
+        const c = new THREE.CylinderGeometry(0.55, 0.6, 9.5, 10);
+        c.translate(x, GL + 4.75, sz * 8.6);
+        cols.push(scaleUV(c, 1));
+        caps.push(boxGeo(1.6, 0.5, 1.6, x, GL + 9.6, sz * 8.6, 0, 1), boxGeo(1.6, 0.4, 1.6, x, GL + 0.2, sz * 8.6, 0, 1));
+        colliders.push({ minX: x - 0.65, maxX: x + 0.65, minZ: sz * 8.6 - 0.65, maxZ: sz * 8.6 + 0.65, y0: 5 });
+      }
+    }
+    root.add(mergedMesh(cols, M.marbleRed, { cast: true }), mergedMesh(caps, M.gold));
+  }
+
   // Ring chandeliers down the hall.
-  for (const x of [44, 58, 72]) chandelier(root, flames, M, x, GL + 7.5, 0, { rings: [[1.6, 0, 12]], light: 10, chainTo: vaultY(0) });
+  for (const x of [40, 52, 64, 76]) chandelier(root, flames, M, x, GL + 10, 0, { rings: [[2.4, 0, 16], [1.5, 1.1, 10], [0.7, 2.0, 6]], light: 14, chainTo: vaultY(0) });
 
   // Two guards standing watch inside the doorway.
   const guards = [];

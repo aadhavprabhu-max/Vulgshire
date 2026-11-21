@@ -15,7 +15,7 @@ export function createCrowd({ root, colliders, floors = [], ground = 0 }) {
     person.root.rotation.y = facing;
     if (mode) person.setMode(mode);
     root.add(person.root);
-    const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 0, h: 0 };
+    const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 0, h: 0, dynamic: true };
     colliders.push(col);
     const npc = { person, path, speed, loop, wait, idx: 1, dir: 1, pause: 0, cur: 0, col };
     npcs.push(npc);
@@ -31,6 +31,12 @@ export function createCrowd({ root, colliders, floors = [], ground = 0 }) {
   function update(dt, t, player) {
     for (const n of npcs) {
       const r = n.person.root;
+      // Far-away people are hidden and paused (cheap crowds in big zones).
+      if (player) {
+        const far = Math.hypot(r.position.x - player.x, r.position.z - player.z) > 85;
+        r.visible = !far;
+        if (far) continue;
+      }
       let speed = 0;
       if (n.path) {
         if (n.pause > 0) {

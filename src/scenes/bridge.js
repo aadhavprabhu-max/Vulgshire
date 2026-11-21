@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
 import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos } from './kit.js';
-import { buildTown, street, lotsAlongStreets, buildLots, streetGeometry } from './town.js';
+import { street, lotsAlongStreets, streetGeometry, scatterLots } from './town.js';
+import { createMapTerrain } from './mapterrain.js';
+import { createChunkedTown } from './chunks.js';
+import { buildStation, buildCathedralExterior, buildGuildhall } from './landmarks.js';
 import { smokeColumn, embers } from './fx.js';
 import { buildCastle } from './castle.js';
 import { createGuard } from '../characters/guard.js';
@@ -22,33 +25,9 @@ const ZONE = LOCATIONS.zones.find((z) => z.id === 'north-river-crossing');
 const K = LOCATIONS.metresPerPixel * LOCATIONS.gameScale; // 1.4 m per map px
 const px = ([x, y]) => [(x - ZONE.originPx[0]) * K, (y - ZONE.originPx[1]) * K];
 
-// River centreline traced from the map (map px), flowing south into the lake.
-const RIVER_PX = [
-  [636, -20],
-  [650, 80],
-  [665, 130],
-  [665, 165],
-  [675, 192],
-  [690, 220],
-  [710, 250],
-  [735, 300],
-];
-const RW = 21; // river half-width (map: ~30 px wide)
-const WATER_Y = -6;
-const BOUNDS = { x0: -155, x1: 98, z0: -78, z1: 88 }; // walkable area
+const WATER_Y = -4; // lake and river surface
 const CASTLE = { x: 205, z: 0, top: 12, r: 55, slope: 34 }; // Crownkeep hill (map px ~812,167)
 const STORM_DIR = new THREE.Vector3(0.95, 0.5, -0.2).normalize(); // dim backlight from behind the keep
-
-// Dense river samples [x, z] in zone metres.
-function riverSamples() {
-  const curve = new THREE.CatmullRomCurve3(
-    RIVER_PX.map((p) => {
-      const [x, z] = px(p);
-      return new THREE.Vector3(x, 0, z);
-    }),
-  );
-  return curve.getSpacedPoints(160).map((v) => [v.x, v.z]);
-}
 
 function mats() {
   return {
@@ -105,61 +84,6 @@ function postTorch(x, z, M, withLight) {
   return { ...t, extra: [post, cup] };
 }
 
-// Flat ribbon between two polylines at heights yL / yR.
-function ribbon(left, right, yL, yR, uvScale = 0.5) {
-  const pos = [];
-  const uv = [];
-  let acc = 0;
-  for (let i = 0; i < left.length - 1; i++) {
-    const seg = Math.hypot(left[i + 1][0] - left[i][0], left[i + 1][1] - left[i][1]);
-    const span = Math.hypot(left[i][0] - right[i][0], left[i][1] - right[i][1], yL - yR);
-    const q = [
-      [left[i][0], yL, left[i][1], acc, 0],
-      [right[i][0], yR, right[i][1], acc, span],
-      [right[i + 1][0], yR, right[i + 1][1], acc + seg, span],
-      [left[i + 1][0], yL, left[i + 1][1], acc + seg, 0],
-    ];
-    acc += seg;
-    for (const k of [0, 2, 1, 0, 3, 2]) {
-      pos.push(q[k][0], q[k][1], q[k][2]);
-      uv.push(q[k][3] * uvScale, q[k][4] * uvScale);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.computeVertexNormals();
-  return g;
-}
-
-// Vertical wall strip along a polyline from y0 (top) to y1 (bottom).
-function wallStrip(line, y0, y1, flip) {
-  const pos = [];
-  const uv = [];
-  let acc = 0;
-  for (let i = 0; i < line.length - 1; i++) {
-    const [ax, az] = line[i];
-    const [bx, bz] = line[i + 1];
-    const seg = Math.hypot(bx - ax, bz - az);
-    const q = [
-      [ax, y0, az, acc, 0],
-      [ax, y1, az, acc, y0 - y1],
-      [bx, y1, bz, acc + seg, y0 - y1],
-      [bx, y0, bz, acc + seg, 0],
-    ];
-    acc += seg;
-    for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
-      pos.push(q[k][0], q[k][1], q[k][2]);
-      uv.push(q[k][3] / 2, q[k][4] / 2);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.computeVertexNormals();
-  return g;
-}
-
 function buildZone() {
   const M = mats();
   const root = new THREE.Group();
@@ -169,94 +93,48 @@ function buildZone() {
   const animated = [];
   const torches = [];
 
-  // ---- River -------------------------------------------------------------
-  const river = riverSamples();
-  const riverDist = (x, z) => {
-    let d = Infinity;
-    for (let i = 0; i < river.length - 1; i++) {
-      const [ax, az] = river[i];
-      const [bx, bz] = river[i + 1];
-      const dx = bx - ax;
-      const dz = bz - az;
-      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
-      d = Math.min(d, Math.hypot(x - ax - dx * t, z - az - dz * t));
-    }
-    return d;
-  };
-  // Unit normals pointing to the EAST bank (flow runs south, +z).
-  const normals = river.map((_, i) => {
-    const [ax, az] = river[Math.max(0, i - 1)];
-    const [bx, bz] = river[Math.min(river.length - 1, i + 1)];
-    const l = Math.hypot(bx - ax, bz - az);
-    return [(bz - az) / l, -(bx - ax) / l];
-  });
-  const offset = (off) => river.map(([x, z], i) => [x + normals[i][0] * off, z + normals[i][1] * off]);
-  const water = new THREE.Mesh(ribbon(offset(-RW - 1), offset(RW + 1), WATER_Y, WATER_Y, 0.25), M.water);
+  // ---- Terrain from the map: land, lake, rivers, quays -----------------------
+  const T = createMapTerrain(ZONE.originPx);
+  const BRIDGE_BOX = { x0: -31, x1: 31, z0: -4.2, z1: 4.2 };
+  const inBridge = (x, z) => x > BRIDGE_BOX.x0 && x < BRIDGE_BOX.x1 && z > BRIDGE_BOX.z0 && z < BRIDGE_BOX.z1;
+  const inPrecinct = (x, z) => Math.hypot(x - CASTLE.x, z - CASTLE.z) < CASTLE.r + CASTLE.slope + 3;
+  const land = (x, z) => !T.isWater(x, z);
+  const walkable = (x, z) => inBridge(x, z) || (T.inRegion(x, z) && land(x, z) && !inPrecinct(x, z));
+  const water = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(2400, 1600), 300), M.water);
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(300, WATER_Y, 300);
   root.add(water);
-  // Quay walls and the paved quay tops.
-  root.add(mergedMesh([wallStrip(offset(-RW), 0, WATER_Y - 1, true), wallStrip(offset(RW), 0, WATER_Y - 1, false)], M.stone)); // both face the water
-  root.add(mergedMesh([ribbon(offset(-RW - 3.2), offset(-RW), 0.02, 0.02), ribbon(offset(RW), offset(RW + 3.2), 0.02, 0.02)], M.paving));
-
-  // Low quay parapets with colliders (gap where the bridge lands).
-  const parapets = [];
-  for (const side of [-1, 1]) {
-    const line = offset(side * (RW + 0.35));
-    for (let i = 0; i < line.length - 1; i += 2) {
-      const [ax, az] = line[i];
-      const [bx, bz] = line[Math.min(line.length - 1, i + 2)];
-      const mx = (ax + bx) / 2;
-      const mz = (az + bz) / 2;
-      if (Math.abs(mz) < 5.2) continue; // bridge abutment
-      const len = Math.hypot(bx - ax, bz - az);
-      const rot = Math.atan2(bx - ax, bz - az) + Math.PI / 2; // local x runs along the segment
-      parapets.push(boxGeo(len + 0.1, 0.9, 0.5, 0, 0, 0, 0, 1).rotateY(rot).translate(mx, 0.45, mz));
-      colliders.push({ cx: mx, cz: mz, hx: len / 2 + 0.05, hz: 0.3, rot, h: 1 });
-    }
-  }
-  root.add(mergedMesh(parapets, M.stone, { cast: true }));
-  // Moored boats.
-  const boats = [];
-  for (const [i, side] of [
-    [30, -1],
-    [44, 1],
-    [104, -1],
-    [118, 1],
-  ]) {
-    const [x, z] = river[i];
-    const n = normals[i];
-    const rot = Math.atan2(n[0], n[1]) + Math.PI / 2;
-    boats.push(boxGeo(1.8, 0.7, 6, 0, 0, 0, 0, 1).rotateY(rot).translate(x + n[0] * side * (RW - 3), WATER_Y + 0.25, z + n[1] * side * (RW - 3)));
-  }
-  root.add(mergedMesh(boats, M.wood));
-
-  // ---- Ground (cobbles everywhere except over the river) -----------------
   {
-    // 4 m cells; the paved quay tops (RW..RW+3.2) cover the ragged edge by the water.
-    const cell = 4;
-    const pos = [];
-    const uv = [];
-    for (let x = -272; x < 192; x += cell) {
-      for (let z = -152; z < 212; z += cell) {
-        if (riverDist(x + 2, z + 2) < RW + 2.9) continue;
-        const q = [
-          [x, z],
-          [x, z + cell],
-          [x + cell, z + cell],
-          [x + cell, z],
-        ];
-        for (const k of [0, 1, 2, 0, 2, 3]) {
-          pos.push(q[k][0], 0, q[k][1]);
-          uv.push(q[k][0] / 2, q[k][1] / 2);
+    const terr = T.buildGround({
+      px0: 330,
+      px1: 1440,
+      py0: 10,
+      py1: 720,
+      waterY: WATER_Y,
+      skip: (x, z) => Math.abs(z) < 6.5 && Math.abs(x) < 33,
+      parapetWhere: (x, z) => T.inRegion(x, z),
+    });
+    const ground = new THREE.Mesh(terr.ground, M.cobble);
+    ground.receiveShadow = true;
+    root.add(ground);
+    root.add(new THREE.Mesh(terr.quays, M.stone));
+    const par = terr.parapets.map(([cx, cz, sx, sz]) => boxGeo(sx, 0.85, sz, cx, 0.42, cz, 0, 1));
+    if (par.length) root.add(mergedMesh(par, M.stone));
+  }
+  // Moored boats along the north shore.
+  {
+    const boats = [];
+    let made = 0;
+    for (let x = -300; x < 900 && made < 22; x += 23) {
+      for (let z = 200; z < 460; z += 2) {
+        if (T.isWater(x, z) && !T.isWater(x, z - 3)) {
+          if (Math.abs(x) > 40) boats.push(boxGeo(1.8, 0.7, 6, x + 1, WATER_Y + 0.25, z + 4.5, 0.2 * Math.sin(x), 1));
+          made++;
+          break;
         }
       }
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.computeVertexNormals();
-    const ground = new THREE.Mesh(g, M.cobble);
-    ground.receiveShadow = true;
-    root.add(ground);
+    if (boats.length) root.add(mergedMesh(boats, M.wood));
   }
 
   // ---- The bridge (map px ~643..687 at y 167) -------------------------------
@@ -326,27 +204,44 @@ function buildZone() {
     torches.push(t);
   }
 
-  // ---- North city wall on the west bank (map y ~ 110) -----------------------
+  // ---- The north city wall along the outlined district's northern edge -----
   {
-    const wz = -82;
-    const wx0 = -175;
-    const bank = offset(-RW).reduce((best, p) => (Math.abs(p[1] - wz) < Math.abs(best[1] - wz) ? p : best));
-    const wx1 = bank[0] - 1;
-    const len = wx1 - wx0;
-    root.add(box(len, 10, 3, M.stone, (wx0 + wx1) / 2, 5, wz));
-    root.add(mergedMesh(merlonGeos(len, (wx0 + wx1) / 2, 10, wz + 1.2, 0, { w: 0.9, h: 1, d: 0.7, gap: 0.8 }), M.stone));
-    for (const tx of [-150, -110, -70, wx1 - 2]) {
-      const t = shadowy(new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(3.6, 4, 16, 8), 2), M.stone));
-      t.position.set(tx, 8, wz);
-      root.add(t);
-      root.add(spire(4.6, 7, M.slate, tx, 16, wz, 8));
+    const pts = [];
+    for (let mx = 440; mx <= 1312; mx += 6) {
+      let my = -1;
+      for (let yy = 40; yy < 300; yy++) {
+        const [zx, zz] = T.toZone(mx, yy);
+        if (T.inRegion(zx + 0.7, zz + 0.7)) {
+          my = yy;
+          break;
+        }
+      }
+      if (my > 0) pts.push(T.toZone(mx, my - 2));
     }
-    colliders.push({ minX: wx0, maxX: wx1 + 4, minZ: wz - 2, maxZ: wz + 1.6 });
+    const wall = [];
+    const merl = [];
+    const towers = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i];
+      const [bx, bz] = pts[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len > 25) continue;
+      const rot = Math.atan2(-(bz - az), bx - ax);
+      wall.push(boxGeo(len + 0.6, 10, 2.6, 0, 0, 0, 0, 2).rotateY(rot).translate((ax + bx) / 2, 5, (az + bz) / 2));
+      merl.push(...merlonGeos(len, 0, 10, 0, 0, { w: 0.9, h: 1, d: 0.7, gap: 0.8 }).map((g) => g.rotateY(rot).translate((ax + bx) / 2, 0, (az + bz) / 2)));
+      if (i % 12 === 0) towers.push([ax, az]);
+    }
+    root.add(mergedMesh(wall, M.stone, { cast: true }), mergedMesh(merl, M.stone));
+    for (const [tx, tz] of towers) {
+      const t = shadowy(new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(3.6, 4, 16, 8), 2), M.stone));
+      t.position.set(tx, 8, tz);
+      root.add(t);
+      root.add(spire(4.6, 7, M.slate, tx, 16, tz, 8));
+    }
   }
 
   // ---- Streets (traced from the final map's west and east banks) -------------
-  const westLane = street(offset(-RW - 6.5).filter(([, z]) => z > -80 && z < 100), 3);
-  const eastLane = street(offset(RW + 6.5).filter(([, z]) => z > -100 && z < 100), 3);
+  const S = (pts, hw) => street(pts.map(([mx, my]) => T.toZone(mx, my)), hw);
   const streets = [
     street([[-BX - 7, 0], [-48, 4], [-62, 14], [-80, 30], [-105, 46], [-130, 60], [-175, 82]], 4.5), // main road SW toward the Old Town
     street([[-BX - 7, -1], [-55, -9], [-90, -12], [-125, -14], [-175, -12]], 3.5), // west road
@@ -356,15 +251,49 @@ function buildZone() {
     street([[-20, 52], [-48, 64], [-82, 84], [-95, 110]], 2.6), // south lane
     street([[-62, 14], [-50, 36], [-30, 46]], 2.4), // alley off the market square
     street([[-70, -36], [-62, -20], [-55, -9]], 2.4),
-    westLane,
     street([[BX, 0], [60, -2], [100, 0]], 4.5), // castle road (east bank)
-    eastLane,
     street([[45, -70], [55, -30], [60, -2], [66, 40], [80, 80]], 3),
+    // Traced from the final map (map pixels), west of the river...
+    S([[440, 290], [500, 283], [560, 283], [620, 283], [690, 287]], 4),
+    S([[462, 280], [510, 250], [555, 226], [592, 203]], 3.2),
+    S([[540, 140], [540, 200], [543, 283]], 3),
+    S([[445, 355], [500, 362], [560, 372], [615, 372], [655, 350], [690, 325]], 4),
+    S([[600, 283], [603, 330], [610, 372]], 3),
+    S([[470, 200], [510, 200], [540, 200], [575, 212]], 2.6),
+    S([[470, 150], [466, 230], [462, 330]], 2.6),
+    // ... the lake shore, the castle's south side and the cathedral ...
+    S([[700, 318], [760, 322], [820, 330], [880, 336], [940, 346], [1000, 360]], 4.5),
+    S([[735, 300], [780, 300], [830, 305], [870, 320]], 3.2),
+    S([[890, 190], [892, 260], [895, 330]], 3.4),
+    S([[895, 185], [950, 180], [1005, 190]], 3),
+    // ... and the Merchants' Quarter.
+    S([[1010, 212], [1090, 232], [1160, 268], [1230, 310], [1295, 352]], 3.4),
+    S([[1010, 300], [1100, 302], [1160, 310]], 3),
+    S([[1000, 360], [1080, 362], [1160, 364], [1240, 366], [1300, 370]], 5),
+    S([[1020, 150], [1020, 250], [1022, 360]], 3),
+    S([[1100, 180], [1102, 270], [1110, 360]], 3),
+    S([[1040, 420], [1120, 412], [1200, 420], [1280, 425]], 3),
+    S([[1238, 312], [1240, 380], [1242, 440]], 3),
+    S([[1160, 364], [1165, 420]], 2.6),
   ];
   const squares = [
     { x: -62, z: 14, r: 13 }, // market square
     { x: 60, z: -2, r: 9 },
   ];
+  // Landmarks (map px): Grand Central Station, the Great Cathedral, the Guildhall.
+  const [stX, stZ] = T.toZone(550, 310);
+  const station = buildStation({ x: stX, z: stZ });
+  const [caX] = T.toZone(945, 0);
+  const cathedral = buildCathedralExterior({ x: caX, z: T.toZone(0, 294)[1] });
+  const [ghX, ghZ] = T.toZone(1172, 318);
+  const guild = buildGuildhall({ x: ghX, z: ghZ });
+  const landmarks = [station, cathedral, guild];
+  for (const l of landmarks) {
+    root.add(l.group);
+    colliders.push(...l.colliders);
+    torches.push(...l.flames);
+  }
+  const inFootprint = (x, z, r) => landmarks.some(({ footprint: [a, b, c, d] }) => x > a - r && x < b + r && z > c - r && z < d + r);
   const paving = streets.map((s) => streetGeometry(s, 0.015));
   for (const q of squares) {
     const g = new THREE.CircleGeometry(q.r, 16);
@@ -384,44 +313,34 @@ function buildZone() {
   root.add(sqTorch.group);
   torches.push(sqTorch);
 
-  // ---- Buildings: varied houses lining every street, infill behind --------------
-  const inZone = (x, z) => x > -200 && x < 112 && z > -80 && z < 130;
-  const nearCastle = (x, z, r) => Math.hypot(x - CASTLE.x, z - CASTLE.z) < CASTLE.r + CASTLE.slope + 8 + r;
+  // ---- Buildings: varied houses lining every street, infill behind (chunked LOD) ---
+  const okLand = (x, z) => T.inRegion(x, z) && land(x, z) && !inPrecinct(x, z);
   const blocked = (x, z, r) =>
-    !inZone(x, z) ||
-    riverDist(x, z) < RW + 4 + r ||
+    !okLand(x, z) ||
+    T.waterNear(x, z, r + 3) ||
     (Math.abs(z) < 7 + r && x > -BX - 9 && x < BX + 2) ||
     squares.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + r) ||
-    nearCastle(x, z, r) ||
-    x > 92 - r;
-  const lots = lotsAlongStreets({ seed: 5, streets, blocked, infillBounds: [-200, 112, -78, 130], infillCount: 120 });
-  const built = buildLots(lots, 77, { litChance: 0.38 });
-  root.add(built.group);
-  colliders.push(...built.colliders);
+    inFootprint(x, z, r) ||
+    (x > 92 - r && x < 106 + r && Math.abs(z) < 92);
+  const lots = lotsAlongStreets({ seed: 5, streets, blocked, infillBounds: [-330, 915, -140, 425], infillCount: 4200 });
+  for (const l of lots) colliders.push({ cx: l.x, cz: l.z, hx: l.w / 2 + 0.35, hz: l.d / 2 + 0.35, rot: l.rot });
+  const town = createChunkedTown({ lots, root, near: 150, far: 520, litChance: 0.38 });
 
   // ---- Street life: market stalls, carts, barrels, lamps, townsfolk ----------
-  const life = streetLife({ M, streets, squares, colliders, root, BX, inBounds: (x, z) => x > BOUNDS.x0 + 3 && x < BOUNDS.x1 - 3 && z > BOUNDS.z0 + 3 && z < BOUNDS.z1 - 3 });
+  const life = streetLife({ M, streets, squares, colliders, root, BX, inBounds: (x, z) => walkable(x, z) && walkable(x + 1.5, z) && walkable(x - 1.5, z), T });
   animated.push(life);
-  // Distant districts beyond the zone (skyline only).
-  root.add(
-    buildTown({
-      seed: 31,
-      count: 260,
-      bounds: [-330, 200, -260, 300],
-      avoid: (x, z, r) => inZone(x, z) || riverDist(x, z) < RW + 4 + r || nearCastle(x, z, r) || (x > 92 && x < 320 && Math.abs(z) < 140), // castle precinct stays clear
-    }),
-  );
+  // The rest of the city beyond the district (far LOD only, chunked so it culls).
+  const skyLots = scatterLots({
+    seed: 31,
+    count: 1100,
+    bounds: [-470, 1080, -260, 640],
+    avoid: (x, z, r) => (T.inRegion(x, z) && !inPrecinct(x, z)) || T.waterNear(x, z, r + 2) || inPrecinct(x, z) || inFootprint(x, z, r) || z < -150,
+  });
+  const skyline = createChunkedTown({ lots: skyLots, root, cell: 250, near: 0, far: 640, litChance: 0.3 });
 
   // ---- Zone boundary: invisible walls + wooden barricades where streets leave ----
-  const { x0, x1, z0, z1 } = BOUNDS;
-  colliders.push(
-    { minX: x0 - 2, maxX: x0, minZ: z0 - 10, maxZ: z1 + 10 },
-    { minX: x1 + 12, maxX: x1 + 14, minZ: z0 - 10, maxZ: z1 + 10 }, // east: behind the gate; walls close the rest
-    { minX: x0 - 10, maxX: x1 + 10, minZ: z0 - 2, maxZ: z0 },
-    { minX: x0 - 10, maxX: x1 + 10, minZ: z1, maxZ: z1 + 2 },
-  );
   const fence = [];
-  const inside = (x, z) => x > x0 && x < x1 && z > z0 && z < z1;
+  const inside = (x, z) => walkable(x, z);
   for (const s of streets) {
     for (const [[ax, az], [bx, bz]] of s.segs) {
       const len = Math.hypot(bx - ax, bz - az);
@@ -431,6 +350,7 @@ function buildZone() {
         const xn = ax + ((bx - ax) * (t + 0.5)) / len;
         const zn = az + ((bz - az) * (t + 0.5)) / len;
         if (inside(x, z) === inside(xn, zn)) continue;
+        if (T.isWater(x, z) || T.isWater(xn, zn) || inPrecinct(x, z) || inPrecinct(xn, zn)) continue;
         if (x > 90 && Math.abs(z) < 8) continue; // the castle road runs on through the open gate
         const rot = Math.atan2(bx - ax, bz - az) + Math.PI / 2;
         const w = s.halfWidth * 2 + 1;
@@ -532,10 +452,24 @@ function buildZone() {
     const g = createGuard();
     g.root.position.set(x, 0, z);
     root.add(g.root);
-    const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+    const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, dynamic: true };
     colliders.push(col);
     return { ...g, dir: 1, speed: 1.05 + i * 0.05, col };
   });
+
+  let streamed = false;
+  const staticBlockers = cameraBlockers.length;
+  // A cloister door on the cathedral's east transept (a dark arched opening).
+  {
+    const cd = cathedral.cloisterDoor;
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 4), new THREE.MeshBasicMaterial({ color: 0x1a1410 }));
+    door.rotation.y = Math.PI / 2;
+    door.position.set(cd.x + 0.02, 2, cd.z);
+    root.add(door);
+    const t = torchFlame(cd.x + 0.6, 3.4, cd.z + 2.2, false, 1.1);
+    root.add(t.group);
+    torches.push(t);
+  }
 
   return {
     root,
@@ -548,8 +482,16 @@ function buildZone() {
     entries: {
       // Coming back out of the Crownkeep: just outside the gate, facing the bridge.
       gate: { pos: new THREE.Vector3(GX - 7, 0, 0), yaw: Math.PI / 2, pitch: 0.12 },
+      // Out of the cathedral / cloister: on the steps, facing the square.
+      cathedral: { pos: new THREE.Vector3(cathedral.door.x, 0, cathedral.door.z + 4), yaw: Math.PI, pitch: 0.1 },
+      cloister: { pos: new THREE.Vector3(cathedral.cloisterDoor.x + 3, 0, cathedral.cloisterDoor.z), yaw: -Math.PI / 2, pitch: 0.1 },
     },
-    portals,
+    portals: [
+      ...portals,
+      { minX: cathedral.door.x - 3, maxX: cathedral.door.x + 3, minZ: cathedral.door.z - 0.6, maxZ: cathedral.door.z + 0.9, to: 'cathedral', entry: 'door' },
+      { minX: cathedral.cloisterDoor.x - 0.6, maxX: cathedral.cloisterDoor.x + 1.1, minZ: cathedral.cloisterDoor.z - 2, maxZ: cathedral.cloisterDoor.z + 2, to: 'cloister', entry: 'door' },
+    ],
+    walkable,
     lanternIntensity: 3,
     env: {
       fog: { color: 0x170d20, density: 0.0052 },
@@ -558,6 +500,21 @@ function buildZone() {
     },
     update(dt, t, ctx) {
       flickerTorches(torches, t);
+      // Stream detailed houses near the player; far ones stay simple.
+      if (ctx?.player) {
+        // Hide flames, lamps and small props that are far away (each is a draw call).
+        for (const tch of torches) {
+          const o = tch.group || tch.flame;
+          if (!o || !o.parent) continue;
+          if (!tch._p) tch._p = o.getWorldPosition(new THREE.Vector3());
+          o.visible = Math.hypot(tch._p.x - ctx.player.x, tch._p.z - ctx.player.z) < 150;
+        }
+        town.update(ctx.player.x, ctx.player.z, { force: !streamed });
+        skyline.update(ctx.player.x, ctx.player.z);
+        streamed = true;
+        cameraBlockers.length = staticBlockers;
+        cameraBlockers.push(...town.blockers);
+      }
       // Open the gate when the monk comes near; close it when he leaves.
       const near = ctx && Math.hypot(ctx.player.x - GX, ctx.player.z) < 16;
       for (const l of leaves) {
@@ -580,7 +537,7 @@ function buildZone() {
 }
 
 // Market stalls around the well, props along the street edges, and townsfolk.
-function streetLife({ M, streets, squares, colliders, root, BX, inBounds }) {
+function streetLife({ M, streets, squares, colliders, root, BX, inBounds, T }) {
   const rnd = mulberry(2024);
   const wood = [];
   const iron = [];
@@ -706,10 +663,11 @@ function streetLife({ M, streets, squares, colliders, root, BX, inBounds }) {
     [[-20, 52], [-48, 64], [-82, 84]],
     [[30, 1.2], [60, 1.5], [86, 1.2]],
     [[45, -68], [55, -30], [60, -2], [66, 40], [78, 76]],
-    streets[8].points.filter(([, z]) => z > -70 && z < -12),
-    streets[10].points.filter(([, z]) => z > -60 && z < -10),
-    streets[10].points.filter(([, z]) => z > 10 && z < 70),
+    ...[10, 13, 17, 23, 21, 19, 12].map((i) => streets[i].points.filter(([x, z]) => inBounds(x, z))),
+    streets[17].points.slice(2).filter(([x, z]) => inBounds(x, z)),
+    streets[23].points.slice(1).filter(([x, z]) => inBounds(x, z)),
   ];
+  void T;
   for (const path of routes) if (path.length > 1) crowd.add(folk(), { path, speed: 0.75 + pr() * 0.5, wait: 2 + pr() * 4 });
   // A slow loop around the well.
   const loop = Array.from({ length: 10 }, (_, i) => [sq.x + Math.cos((i / 10) * Math.PI * 2) * 5.6, sq.z + Math.sin((i / 10) * Math.PI * 2) * 5.6]);
@@ -734,7 +692,7 @@ function streetLife({ M, streets, squares, colliders, root, BX, inBounds }) {
 
 export default {
   id: 'bridge',
-  title: 'North River Crossing',
+  title: 'The North Shore',
   reference: '03-burning-castle-bridge.png',
   build: buildZone,
 };

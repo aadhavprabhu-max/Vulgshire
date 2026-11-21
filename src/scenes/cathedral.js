@@ -348,6 +348,15 @@ function buildCathedral() {
   balMesh.position.z = -2.6;
   root.add(balMesh);
   root.add(box(L + 0.2, 0.14, 0.5, M.darkStone, 0, 1.07, -2.45, 1));
+  {
+    const exit = new THREE.Mesh(lancetGeo(2.6, 3.8), new THREE.MeshBasicMaterial({ color: 0x241a14 }));
+    exit.rotation.y = Math.PI;
+    exit.position.set(0, 0, WEST - 0.02);
+    root.add(exit);
+    const glow = new THREE.PointLight(0xffa050, 2.5, 6, 2);
+    glow.position.set(0, 2.6, WEST - 1);
+    root.add(glow);
+  }
   cameraBlockers.push(balMesh);
   colliders.push(
     { minX: -NAVE - 1, maxX: NAVE + 1, minZ: -3, maxZ: -2.2, h: 1.2 },
@@ -361,6 +370,9 @@ function buildCathedral() {
     sky: null,
     colliders,
     cameraBlockers,
+    entries: { door: { pos: new THREE.Vector3(-4, 0, -1.3), yaw: -0.2, pitch: -0.27 } },
+    // The door in the west wall behind the gallery leads back out to the square.
+    portals: [{ minX: -2, maxX: 2, minZ: WEST - 1.0, maxZ: WEST + 1, to: 'bridge', entry: 'cathedral' }],
     spawn: new THREE.Vector3(-4, 0, -1.3),
     spawnYaw: -0.2,
     spawnPitch: -0.27,

@@ -74,6 +74,7 @@ function loadScene(index, entry = null) {
   controller.colliders = built.colliders;
   controller.blockers = built.cameraBlockers;
   controller.floors = built.floors || [];
+  controller.walkable = built.walkable || null;
   const start = (entry && built.entries?.[entry]) || { pos: built.spawn, yaw: built.spawnYaw, pitch: built.spawnPitch };
   controller.pos.copy(start.pos);
   controller.yaw = controller.facing = start.yaw;
@@ -187,7 +188,7 @@ function frame() {
   }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   retro.render(scene, camera);
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, get info() { return retro.stats; } };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get info() { return retro.stats; } };
   requestAnimationFrame(frame);
 }
 frame();
