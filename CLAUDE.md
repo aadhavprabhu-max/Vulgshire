@@ -1,6 +1,6 @@
 # VULGSHIRE — project brief for Claude Code
 
-A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". All four reference scenes have a first pass. The bridge scene is the first **fully walkable zone** (North River Crossing, built from the final map). Its castle gate now opens into **Inside the Crownkeep**, a walkable interior with a grand staircase and the Great Hall. First-person view exists (**V**).
+A dark fantasy medieval game styled like an early-2000s 3D game. The setting is Vulgshire, "The City of Three Rivers". All four reference scenes have a first pass. The **North Shore** is the big walkable zone: the whole district the owner outlined (west of the north river, the Crownkeep, the Great Cathedral and its square, the north lake shore, the Merchants' Quarter), built from the final map. Its castle gate now opens into **Inside the Crownkeep**, a walkable interior with a grand staircase and the Great Hall. First-person view exists (**V**).
 
 ## How to work with me
 
@@ -76,7 +76,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - All pins live in `src/data/locations.json` and are drawn onto a copy of the map at `docs/map-locations.png` by `python3 tools/annotate_map.py`. Red pins come from the final map; blue pins are proposals. The reference map itself is never edited.
 - **Bridge (ref 03) = walkable zone "North River Crossing":** the stone bridge over the NORTH river, just west of the Crownkeep (map px 665,167). The zone covers map px 558–736 × 110–228.
 - **Cathedral (ref 04):** the Great Cathedral beside the Crownkeep. The view is from the west gallery.
-- **Cloister (ref 01):** not placed yet. Proposal: the Great Cathedral's cloister.
+- **Cloister (ref 01):** the Great Cathedral's cloister, entered from the east transept door.
 - **Rooftop (ref 02):** not placed yet. Proposal: a tower in the Old Town looking across the lake.
 - **The burning castle** in ref 03 is shown because the reference shows it. Why it burns (if it ever does in the story) is **undecided lore**.
 
@@ -90,6 +90,20 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **Bounds:** walkable x −155…98, z −78…88, with invisible walls and wooden barricades wherever a street leaves the zone. Skyline-only districts continue beyond.
 - **Colliders:** axis-aligned `{minX,maxX,minZ,maxZ}` or rotated `{cx,cz,hx,hz,rot}`. An optional `h` (height) lets the camera pass over low things like railings; without `h` the camera treats the collider as a full-height wall.
 
+## The North Shore (`src/scenes/bridge.js`, scene id still `bridge`)
+
+- **Terrain from the map:** `tools/build_masks.py` reads the water (lake + rivers) from the final map and the walkable district from the owner's outline (`reference/maps/vulgshire-north-shore-outline.png`), and writes `src/data/mapmasks.json`. `src/scenes/mapterrain.js` turns these into ground, quay walls and shore parapets, and gives `isWater` / `inRegion` / `walkable` tests. The controller keeps the player on walkable ground (`built.walkable`).
+- **Same coordinates as before:** origin at the north-river bridge, x = east, z = south, 1 map px = 1.4 m. Water is at y = -4.
+- **Landmarks** (`src/scenes/landmarks.js`):
+  - **Grand Central Station:** map px 550,310, where all the metro lines meet; a gothic hall with a clock tower, rose window and lantern plaza.
+  - **The Great Cathedral exterior:** twin spires, rose window, flying buttresses, a square with a fountain. Its door goes to the `cathedral` scene, and a door on the east transept goes to the `cloister`.
+  - **The Merchants' Guildhall:** an arcaded hall with a lookout tower.
+  - Plus the north city wall traced along the outline, the bridge and the Crownkeep gate.
+- **Streets:** the castle-side ones from before plus about 20 traced from the map (map-pixel polylines in `streets`).
+- **Buildings:** about 1,500 lots via `lotsAlongStreets` (spatial-hashed). `src/scenes/chunks.js` splits them into 100 m chunks: a cheap `min` LOD everywhere (4 materials) and the detailed `high` LOD built lazily within 150 m. Every lot has a `seed`, so near and far versions match. The rest of the city is a skyline of `scatterLots` in 250 m far-only chunks.
+- **Performance:** about 300–420k triangles and about 850 draw calls. Colliders sit in an 8 m grid in the controller; NPC colliders are `dynamic`. NPCs further than 85 m and flames further than 150 m are hidden.
+- **New archetypes:** `arcade` (arcaded ground floor), `turret` (corner turret with a cone cap), `baroque` (Prague-style decorated gable with volutes and urns).
+
 ## Inside the Crownkeep (`src/scenes/crownkeep.js`)
 
 - Original design inspired by the mood references in `reference/interiors/` plus real halls: the medieval great hall's raised dais, the Palais Garnier's split ceremonial staircase, and the looping ribbed vault of Prague Castle's Vladislav Hall.
@@ -97,7 +111,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **Grand Stair Hall** (x 0–28): a central flight up to a landing, two flights up to the east gallery, two-storey arcades with balustraded galleries, torchères, a tiered chandelier.
 - **The court:** 17 NPCs. Walkers: a servant carrying a tray up and down the grand stairs, a guard patrolling the galleries, a lady strolling, a noble circling the hall, a candle-bearer. Standing: nobles talking, a scribe reading by the library, a priest praying near the throne, heralds, gossips at the warm doorway.
 - **Great Hall** (x 28–90, on the upper floor): a ribbed vault with looping ribs, moonbeams through the south lancets, a rose window over two rows of lancets, the dais with an **empty throne** (who sits there is undecided lore), the library gallery, a warm brick doorway, an inlaid floor medallion, chandeliers, and two guards at the door.
-- Exits: the west door goes back to the castle gate (`bridge`, entry `gate`).
+- Exits: the west door goes back to the castle gate (`bridge`, entry `gate`). The cathedral's west door and the cloister's west door lead back to the North Shore (entries `cathedral`, `cloister`).
 - Colliders use levels (`y0`/`y1`) so balustrades only block on their floor; floors handle the stairs.
 
 ## Buildings (`src/scenes/buildings.js`, `town.js`)
