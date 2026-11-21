@@ -531,7 +531,7 @@ function buildZone() {
 
   return {
     root,
-    sky: buildSky({ preset: 'storm' }),
+    sky: buildSky({ moonDir: new THREE.Vector3(0.9, 0.42, 0.28).normalize(), moonSize: 30, horizon: 0x170d20 }),
     colliders,
     cameraBlockers,
     spawn: new THREE.Vector3(-25, 0, -0.9),
@@ -544,7 +544,7 @@ function buildZone() {
     portals,
     lanternIntensity: 3,
     env: {
-      fog: { color: 0x2a1736, density: 0.0052 },
+      fog: { color: 0x170d20, density: 0.0052 },
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
       dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 45, target: new THREE.Vector3(-10, 0, 0) },
     },

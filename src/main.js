@@ -56,7 +56,7 @@ function loadScene(index, entry = null) {
   fog.color.set(env.fog.color);
   fog.density = env.fog.density;
   scene.fog = settings.fog ? fog : null;
-  scene.background = new THREE.Color(env.fog.color);
+  scene.background = built.sky?.userData.background ?? new THREE.Color(env.fog.color);
   hemi.color.set(env.hemi.sky);
   hemi.groundColor.set(env.hemi.ground);
   hemi.intensity = env.hemi.intensity;

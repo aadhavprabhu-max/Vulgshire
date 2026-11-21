@@ -172,52 +172,41 @@ export const tex = {
         return shade([150, 132, 100], streak * (0.82 + r() * 0.3));
       }));
     }),
-  // Sky dome textures. Presets: night (cloister), storm (purple, bridge), overcast (rooftop).
-  sky: (preset = 'night') =>
-    cached('sky-' + preset, () => {
-      const P = {
-        night: { stops: ['#04050d', '#0a0e22', '#141a38', '#0a0d1e'], cloud: [58, 68, 110], n: 70, a: 0.18, stars: 40, band: [18, 44] },
-        storm: { stops: ['#07030d', '#1d0f33', '#3a1f5a', '#26163a'], cloud: [92, 62, 140], n: 160, a: 0.22, stars: 0, band: [10, 60], streak: true },
-        overcast: { stops: ['#15141f', '#2c2b3c', '#4c4a5e', '#3a3948'], cloud: [92, 90, 112], n: 180, a: 0.2, stars: 0, band: [12, 62], streak: true },
-      }[preset];
-      const w = 256;
-      const h = 128;
+  // Night sky as an equirectangular background (no dome geometry, so no edges):
+  // near-black zenith, stars, and a glow at the horizon that matches the fog colour.
+  nightSky: (horizonHex = 0x0c1228) =>
+    cached('nightSky' + horizonHex, () => {
+      // Big enough that one texel is about one screen pixel at 640x360, so stars
+      // stay crisp points instead of blocky flakes.
+      const w = 2048;
+      const h = 1024;
+      const r = rng(211);
+      const hz = `rgb(${(horizonHex >> 16) & 255},${(horizonHex >> 8) & 255},${horizonHex & 255})`;
       const c = makeCanvas(w, h);
       const ctx = c.getContext('2d');
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, P.stops[0]);
-      grad.addColorStop(0.35, P.stops[1]);
-      grad.addColorStop(0.5, P.stops[2]);
-      grad.addColorStop(1, P.stops[3]);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-      const r = rng(37);
-      const [cr, cg, cb] = P.cloud;
-      for (let i = 0; i < P.n; i++) {
+      const g = ctx.createLinearGradient(0, 0, 0, h / 2);
+      g.addColorStop(0, '#010103');
+      g.addColorStop(0.55, '#020308');
+      g.addColorStop(0.85, hz);
+      g.addColorStop(1, hz);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h / 2);
+      ctx.fillStyle = hz;
+      ctx.fillRect(0, h / 2, w, h / 2);
+      // Stars: mostly faint single points, a few brighter ones, fading toward the horizon.
+      for (let i = 0; i < 2600; i++) {
+        const y = Math.pow(r(), 1.4) * h * 0.44;
         const x = r() * w;
-        const y = P.band[0] + r() * (P.band[1] - P.band[0]);
-        const rad = 6 + r() * 18;
-        const sx = P.streak ? 2.2 : 1; // stretched, streaky storm clouds
-        for (const ox of [-w, 0, w]) {
-          ctx.save();
-          ctx.translate(x + ox, y);
-          ctx.scale(sx, 1);
-          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rad);
-          const a = P.a + r() * P.a;
-          g.addColorStop(0, `rgba(${cr},${cg},${cb},${a})`);
-          g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-          ctx.fillStyle = g;
-          ctx.fillRect(-rad, -rad, rad * 2, rad * 2);
-          ctx.restore();
-        }
+        const fade = 1 - y / (h * 0.46);
+        const b = (0.4 + r() * 0.6) * fade;
+        const big = r() < 0.03;
+        ctx.fillStyle = `rgba(${210 + r() * 40},${215 + r() * 30},255,${Math.min(1, b * (big ? 1.6 : 1))})`;
+        ctx.fillRect(Math.floor(x), Math.floor(y), big ? 2 : 1, big ? 2 : 1);
       }
-      for (let i = 0; i < P.stars; i++) {
-        ctx.fillStyle = `rgba(200,210,255,${0.3 + r() * 0.5})`;
-        ctx.fillRect(Math.floor(r() * w), Math.floor(r() * 30), 1, 1);
-      }
-      const t = toTexture(c);
-      t.wrapT = THREE.ClampToEdgeWrapping;
-      return t;
+      const tx = toTexture(c);
+      tx.mapping = THREE.EquirectangularReflectionMapping;
+      tx.wrapT = THREE.ClampToEdgeWrapping;
+      return tx;
     }),
   moon: () =>
     cached('moon', () => {

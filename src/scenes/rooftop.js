@@ -307,7 +307,7 @@ function buildRooftop() {
     mt.repeat.set(8, 8);
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(900, 900),
-      new THREE.MeshBasicMaterial({ map: mt, color: 0x5a5a72, transparent: true, opacity: op, depthWrite: false, fog: true }),
+      new THREE.MeshBasicMaterial({ map: mt, color: 0x3c3c50, transparent: true, opacity: op, depthWrite: false, fog: true }),
     );
     m.rotation.x = -Math.PI / 2;
     m.position.set(0, y, -200);
@@ -318,7 +318,7 @@ function buildRooftop() {
 
   return {
     root,
-    sky: buildSky({ preset: 'overcast' }),
+    sky: buildSky({ moonDir: new THREE.Vector3(-0.42, 0.24, -0.88).normalize(), moonSize: 32, horizon: 0x16161f }),
     colliders,
     cameraBlockers,
     spawn: new THREE.Vector3(-0.4, 0, 1.6),
@@ -326,7 +326,7 @@ function buildRooftop() {
     spawnPitch: -0.16,
     lanternIntensity: 2.5,
     env: {
-      fog: { color: 0x2c2c3e, density: 0.0058 },
+      fog: { color: 0x16161f, density: 0.0058 },
       hemi: { sky: 0x6a7090, ground: 0x18181f, intensity: 1.2 },
       dir: { dir: LIGHT_DIR, color: 0x9aa0c8, intensity: 0.9, shadow: true, extent: 14 },
     },
