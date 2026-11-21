@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { floorAt as floorHeight } from './floors.js';
 
 // Third-person (over the shoulder) or first-person controller.
 // WASD / arrows move relative to the camera, Shift runs, mouse looks (click to
@@ -18,15 +19,6 @@ const SHOULDER = new THREE.Vector3(1.1, 0.0, 0); // camera sits right of the mon
 const DISTANCE = 3.9;
 const HEAD_HEIGHT = 1.8;
 const EYE_HEIGHT = 1.62;
-const STEP = 0.6; // highest step the monk climbs without help
-
-// Height of a floor surface at (x, z), or null if outside it.
-function surfaceY(f, x, z) {
-  if (x < f.minX || x > f.maxX || z < f.minZ || z > f.maxZ) return null;
-  if (f.y !== undefined) return f.y;
-  const t = f.axis === 'x' ? (x - f.minX) / (f.maxX - f.minX) : (z - f.minZ) / (f.maxZ - f.minZ);
-  return f.y0 + (f.y1 - f.y0) * t;
-}
 
 const active = (b, y) => (b.y0 === undefined || y >= b.y0 - 0.01) && (b.y1 === undefined || y <= b.y1);
 
@@ -122,12 +114,7 @@ export class ThirdPersonController {
   }
 
   floorAt(x, z, y) {
-    let best = this.ground;
-    for (const f of this.floors) {
-      const h = surfaceY(f, x, z);
-      if (h !== null && h <= y + STEP && h > best) best = h;
-    }
-    return best;
+    return floorHeight(this.floors, this.ground, x, z, y);
   }
 
   collide() {

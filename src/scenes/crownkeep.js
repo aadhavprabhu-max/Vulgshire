@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { tex, scaleUV, worldBoxUV } from '../retro/textures.js';
 import { lambert, archPoints, archHole, shadowy, box, mergedMesh, boxGeo, lancetGeo, flickerTorches, mulberry } from './kit.js';
 import { createGuard } from '../characters/guard.js';
+import { createPerson, PALETTES } from '../characters/people.js';
+import { createCrowd, faceToward } from '../characters/crowd.js';
 
 // INSIDE THE CROWNKEEP. Original design inspired by the mood references in
 // reference/interiors/ (a gothic hall-library with a rose window and moonbeam,
@@ -699,6 +701,41 @@ function buildCrownkeep() {
   root.add(mergedMesh(rails, M.marbleRed, { cast: true }));
   root.add(mergedMesh(posts, M.marbleGrey));
 
+  // =========================================================================
+  // THE COURT: people living in the keep (all original designs)
+  // =========================================================================
+  const crowd = createCrowd({ root, colliders, floors });
+  const pr = mulberry(77);
+  const P = (opts) => createPerson({ rnd: pr, ...opts });
+  const NOB = PALETTES.noble;
+  const guardPerson = () => {
+    const g = createGuard();
+    return { root: g.root, update: (dt, t, s) => g.update(dt, s), setMode() {} };
+  };
+  // Stair hall.
+  crowd.add(P({ outfit: 'servant', hat: 'coif', carry: 'tray' }), {
+    path: [[2.5, -5], [5.6, 0], [13, 0], [15.5, -3.5], [15.5, -7.25], [18.2, -7.25], [24, -7.25], [26.5, -4], [26.5, 0], [34, 0], [46, 1.5], [50, 4.5]],
+    speed: 1.1,
+    wait: 4,
+  });
+  crowd.add(guardPerson(), { path: [[2, -12.6], [26.4, -12.6], [26.4, 12.6], [2, 12.6]], speed: 0.9, wait: 3 });
+  crowd.add(P({ outfit: 'robe', hat: 'chaperon', main: NOB[0] }), { pos: [3, -7], facing: faceToward(3, -7, 3, -5.8), mode: 'talk' });
+  crowd.add(P({ outfit: 'gown', hat: 'veil', main: NOB[3], trim: 0xd8d0c0 }), { pos: [3, -5.8], facing: faceToward(3, -5.8, 3, -7), mode: 'idle' });
+  crowd.add(P({ outfit: 'gown', hat: 'none', main: NOB[4] }), { path: [[3, 7.5], [11.5, 7.5]], speed: 0.6, wait: 5 });
+  crowd.add(P({ outfit: 'herald', hat: 'cap', main: 0x7a1c22 }), { pos: [16.5, 0], facing: Math.PI / 2, mode: 'idle' });
+  // Great Hall.
+  crowd.add(P({ outfit: 'robe', hat: 'hood', main: NOB[5], carry: 'book' }), { pos: [44, -5.6], facing: 0, mode: 'read' });
+  crowd.add(P({ outfit: 'doublet', hat: 'beret', main: NOB[2] }), { pos: [52, -0.2], facing: faceToward(52, -0.2, 52.6, -1), mode: 'talk' });
+  crowd.add(P({ outfit: 'gown', hat: 'veil', main: NOB[1] }), { pos: [53.6, -1.0], facing: faceToward(53.6, -1, 52.6, -1), mode: 'idle' });
+  crowd.add(P({ outfit: 'robe', hat: 'none', main: NOB[6] }), { pos: [52.2, -1.8], facing: faceToward(52.2, -1.8, 52.6, -1), mode: 'talk' });
+  crowd.add(P({ outfit: 'priest', hat: 'coif' }), { pos: [82.2, -4.6], facing: faceToward(82.2, -4.6, 87, 0), mode: 'pray' });
+  crowd.add(P({ outfit: 'herald', hat: 'cap', main: 0x1f2f6a, carry: 'scroll' }), { pos: [81.6, 4.6], facing: Math.PI / 2, mode: 'idle' });
+  crowd.add(P({ outfit: 'robe', hat: 'chaperon', main: NOB[3] }), { path: [[36, 3.5], [74, 3.5], [74, -3.5], [36, -3.5]], loop: true, speed: 0.7, wait: 0 });
+  crowd.add(P({ outfit: 'servant', hat: 'coif', carry: 'candle' }), { path: [[34, 6.2], [73, 6.2]], speed: 0.8, wait: 3 });
+  crowd.add(P({ outfit: 'gown', hat: 'none', main: NOB[0] }), { pos: [73.4, -7.3], facing: faceToward(73.4, -7.3, 74.8, -7.0), mode: 'talk' });
+  crowd.add(P({ outfit: 'servant', hat: 'none', carry: 'basket' }), { pos: [74.8, -7.0], facing: faceToward(74.8, -7.0, 73.4, -7.3), mode: 'idle' });
+  crowd.add(P({ outfit: 'gown', hat: 'veil', main: NOB[4], trim: 0xb08a40 }), { pos: [39.8, -4.0], facing: faceToward(39.8, -4, 38, -4.6), mode: 'idle' });
+
   const spawn = new THREE.Vector3(2.4, 0, 0);
   return {
     root,
@@ -718,9 +755,10 @@ function buildCrownkeep() {
       hemi: { sky: 0x56628e, ground: 0x2a2228, intensity: 2.3 },
       dir: { dir: MOON.clone().negate(), color: 0x9fb2ff, intensity: 0.5, shadow: false },
     },
-    update(dt, t) {
+    update(dt, t, ctx) {
       flickerTorches(flames, t);
       for (const g of guards) g.update(dt, 0);
+      crowd.update(dt, t, ctx?.player);
     },
   };
 }

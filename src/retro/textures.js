@@ -622,6 +622,29 @@ export const tex = {
         return shade(land ? [150, 120, 70] : [70, 84, 80], 0.85 + r() * 0.2);
       }));
     }),
+  // Neutral woven cloth (tinted per character through the material colour).
+  cloth: () =>
+    cached('cloth', () => {
+      const r = rng(173);
+      return toTexture(paint(32, 32, (x, y) => {
+        const weave = (x + y) % 2 ? 0.94 : 1.04;
+        const fold = 0.86 + 0.14 * Math.sin(x * 0.55) ** 2;
+        return shade([200, 198, 194], weave * fold * (0.9 + r() * 0.12));
+      }));
+    }),
+  // Noble damask: a repeating lozenge pattern, also tinted.
+  damask: () =>
+    cached('damask', () => {
+      const r = rng(179);
+      return toTexture(paint(32, 32, (x, y) => {
+        const cx = (x % 16) - 7.5;
+        const cy = (y % 16) - 7.5;
+        const d = Math.abs(cx) + Math.abs(cy);
+        const on = d < 5 && d > 2.5;
+        const fold = 0.86 + 0.14 * Math.sin(x * 0.4) ** 2;
+        return shade(on ? [236, 228, 210] : [170, 166, 162], fold * (0.92 + r() * 0.1));
+      }));
+    }),
   // Light shaft: bright core fading to the edges and toward the floor end.
   shaft: () =>
     cached('shaft', () =>
