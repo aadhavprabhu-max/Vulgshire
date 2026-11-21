@@ -104,6 +104,42 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **Performance:** about 300–420k triangles and about 850 draw calls. Colliders sit in an 8 m grid in the controller; NPC colliders are `dynamic`. NPCs further than 85 m and flames further than 150 m are hidden.
 - **New archetypes:** `arcade` (arcaded ground floor), `turret` (corner turret with a cone cap), `baroque` (Prague-style decorated gable with volutes and urns).
 
+## The Ancient Underground (`src/scenes/metro.js`, scene id `metro`)
+
+- **Line II, The Pilgrim's Way (orange)** is built. The other 8 lines are on the map only.
+- **Data** lives in `src/data/metro.json`: all 9 lines (names, numerals, colours, `open`) and the orange stations (names, `mapPx` snapped onto the owner's drawn line, `style`). Station names on signs come from here.
+- **Station order:** Triflumen ⇄, Northern Quays, Crownkeep Stair, The Great Cathedral, Ashenwood Gate, Belfry Row, Merchants' Quarter ⇄.
+- **Layout:** the line is laid out straight along x in its own coordinates (stations at x 0, 260, 480, 700, 920, 1140, 1360). Platforms are on the −z side (top at y = 1), rails at y = 0.
+- **Station looks** follow the owner's renders (`reference/metro-station-designs.webp`). The render titles are not used as names; their looks map to stations like this:
+
+  | Station | Look |
+  |---|---|
+  | Triflumen | grand hall (clock, stairs, chandeliers) |
+  | Northern Quays | sewers (water channel, stalactites) |
+  | Crownkeep Stair | castle (stained glass, banners, guard) |
+  | The Great Cathedral | cathedral depths (ribbed vault, chandeliers, pilgrims) |
+  | Ashenwood Gate | fortress (round pillars, iron gates, guards) |
+  | Belfry Row | crypt (green braziers, winged statue) |
+  | Merchants' Quarter | citadel (brick, lamps, benches, crates) |
+
+  The Ironforge Junction render is spare.
+- **River crossing:** between Triflumen and Northern Quays (x 95–175) the train leaves the tunnel and crosses the north river on a stone viaduct, under the open sky, with the city and the Crownkeep around it. Fog thins out there.
+- **The train** (`src/scenes/train.js`, from `reference/metro-train-design.webp`):
+  - 3 flat-faced cars in a weathered green and cream livery, with the "VULGSHIRE" crest, lanterns and sliding doors on the platform side
+  - interior with benches and lamps
+  - it shuttles end to end, dwelling about 10 s at each stop
+- **Riding:**
+  - Entering a station calls `onEnter`, which sends the train toward you.
+  - Platform-edge colliders open only where the doors are.
+  - Stepping inside makes you ride (switching to first person), and you can leave when the doors open.
+- **Street side** (North Shore):
+  - Grand Central Station's doors lead to Triflumen.
+  - The other stations have stone kiosks placed at the nearest clear spot to their `mapPx`.
+  - Platform stairs lead back up to those kiosks.
+  - A second train crosses a viaduct over the north river every 40 s.
+- **The map (M):** `src/ui/metromap.js` shows `src/assets/metro-map.jpg` (built by `tools/build_metro_map.py` from the final map plus the owner's line drawing) with a pulsing "you are here" dot. Scenes can provide `mapPos(player)`.
+- **Scene contract additions:** `onEnter(entry)`, `mapPos(player)`. The update `ctx` now includes `scene`.
+
 ## Inside the Crownkeep (`src/scenes/crownkeep.js`)
 
 - Original design inspired by the mood references in `reference/interiors/` plus real halls: the medieval great hall's raised dais, the Palais Garnier's split ceremonial staircase, and the looping ribbed vault of Prague Castle's Vladislav Hall.
@@ -161,6 +197,7 @@ Source of truth for the layout is `reference/maps/vulgshire-topdown-FINAL.png`. 
 
 - `reference/maps/`: final top-down map plus the two older angled maps.
 - `reference/screenshots/`: the four look-and-feel stills.
+- `reference/metro-train-design.webp`, `reference/metro-station-designs.webp`: the owner's metro designs (train and the 8 station looks).
 - `reference/interiors/`: two mood images for the Crownkeep interior (a gothic hall-library and a dark grand staircase), added by the user. They look like found images, so treat them as **mood references only**: never ship them or copy them as game assets.
 - `docs/MASTER_MAP_PROMPT.md`: the master map-generation prompt, verbatim.
 - `screenshots/progress/`: numbered progress screenshots (16:9, about 640 px wide).
