@@ -56,6 +56,7 @@ function mats() {
     slate: lambert(tex.slate()),
     rock: lambert(tex.darkStone(), { color: 0x6a6070 }),
     wood: lambert(tex.wood()),
+    gateWood: lambert(tex.wood(), { color: 0x9a8070 }),
     iron: lambert(null, { color: 0x1e1c1c }),
     lit: new THREE.MeshBasicMaterial({ map: tex.litWindow() }),
     gateGlow: new THREE.MeshBasicMaterial({ color: 0xff9a40 }),
@@ -399,7 +400,7 @@ function buildZone() {
       seed: 31,
       count: 260,
       bounds: [-330, 200, -260, 300],
-      avoid: (x, z, r) => inZone(x, z) || riverDist(x, z) < RW + 4 + r || nearCastle(x, z, r) || (x > 92 && Math.abs(z) < 80),
+      avoid: (x, z, r) => inZone(x, z) || riverDist(x, z) < RW + 4 + r || nearCastle(x, z, r) || (x > 92 && x < 320 && Math.abs(z) < 140), // castle precinct stays clear
     }),
   );
 
@@ -407,7 +408,7 @@ function buildZone() {
   const { x0, x1, z0, z1 } = BOUNDS;
   colliders.push(
     { minX: x0 - 2, maxX: x0, minZ: z0 - 10, maxZ: z1 + 10 },
-    { minX: x1, maxX: x1 + 2, minZ: z0 - 10, maxZ: z1 + 10 },
+    { minX: x1 + 12, maxX: x1 + 14, minZ: z0 - 10, maxZ: z1 + 10 }, // east: behind the gate; walls close the rest
     { minX: x0 - 10, maxX: x1 + 10, minZ: z0 - 2, maxZ: z0 },
     { minX: x0 - 10, maxX: x1 + 10, minZ: z1, maxZ: z1 + 2 },
   );
@@ -422,6 +423,7 @@ function buildZone() {
         const xn = ax + ((bx - ax) * (t + 0.5)) / len;
         const zn = az + ((bz - az) * (t + 0.5)) / len;
         if (inside(x, z) === inside(xn, zn)) continue;
+        if (x > 90 && Math.abs(z) < 8) continue; // the castle road runs on through the open gate
         const rot = Math.atan2(bx - ax, bz - az) + Math.PI / 2;
         const w = s.halfWidth * 2 + 1;
         fence.push(boxGeo(w, 0.18, 0.12, 0, 0, 0, 0, 1).rotateY(rot).translate(x, 0.6, z));
@@ -452,16 +454,44 @@ function buildZone() {
       root.add(w);
     }
   }
-  // Curtain wall running from the gatehouse along the foot of the hill.
-  root.add(box(3, 11, 90, M.castle, GX + 2, 5.5, 0));
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 6.5), M.gateGlow);
+  // Curtain wall running north and south from the gatehouse along the hill foot.
+  for (const sz of [-1, 1]) {
+    root.add(box(3, 11, 80, M.castle, GX + 2, 5.5, sz * 48));
+    colliders.push({ minX: GX - 4, maxX: GX + 6, minZ: sz < 0 ? -90 : 2.5, maxZ: sz < 0 ? -2.5 : 90 });
+  }
+  // The gate itself: two oak leaves that swing inward as you approach.
+  const leaves = [];
+  const leafGeo = new THREE.BoxGeometry(0.35, 4.6, 2.5);
+  leafGeo.translate(0, 2.3, -1.25 * 1); // hinge on one edge
+  for (const sz of [-1, 1]) {
+    const hinge = new THREE.Group();
+    hinge.position.set(GX + 1.6, 0, sz * 2.5);
+    const leaf = new THREE.Mesh(leafGeo, M.gateWood);
+    leaf.scale.z = sz; // mirror so both hinge outward
+    leaf.castShadow = true;
+    hinge.add(leaf);
+    for (const y of [1.0, 3.4]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 2.5), M.iron);
+      band.position.set(0, y, -1.25 * sz);
+      hinge.add(band);
+    }
+    root.add(hinge);
+    leaves.push({ hinge, sz, open: 0 });
+  }
+  // Warm torchlight spilling from the inner ward through the gate.
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(5, 6.5), M.gateGlow);
   glow.rotation.y = -Math.PI / 2;
-  glow.position.set(GX + 0.5, 3.2, 0);
+  glow.position.set(GX + 9, 3.2, 0);
   root.add(glow);
   const gateLight = new THREE.PointLight(0xff8a30, 18, 26, 1.6);
   gateLight.position.set(GX - 5, 3, 0);
   root.add(gateLight);
-  colliders.push({ minX: GX - 4, maxX: GX + 6, minZ: -60, maxZ: 60 });
+  const innerLight = new THREE.PointLight(0xff9a48, 14, 18, 1.6);
+  innerLight.position.set(GX + 6, 3.5, 0);
+  root.add(innerLight);
+  // Walking through the open gate leads inside the Crownkeep.
+  const portals = [{ minX: GX + 3.5, maxX: GX + 12, minZ: -2.5, maxZ: 2.5, to: 'crownkeep', entry: 'gate' }];
+  colliders.push({ minX: GX + 7, maxX: GX + 8, minZ: -3, maxZ: 3 }); // backstop behind the portal
   for (const sz of [-1, 1]) {
     const t = torchFlame(GX - 4.3, 3.2, sz * 3.4, false, 1.4);
     root.add(t.group);
@@ -507,14 +537,25 @@ function buildZone() {
     spawn: new THREE.Vector3(-25, 0, -0.9),
     spawnYaw: -Math.PI / 2 + 0.03,
     spawnPitch: 0.2,
+    entries: {
+      // Coming back out of the Crownkeep: just outside the gate, facing the bridge.
+      gate: { pos: new THREE.Vector3(GX - 7, 0, 0), yaw: Math.PI / 2, pitch: 0.12 },
+    },
+    portals,
     lanternIntensity: 3,
     env: {
       fog: { color: 0x2a1736, density: 0.0052 },
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
       dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 45, target: new THREE.Vector3(-10, 0, 0) },
     },
-    update(dt, t) {
+    update(dt, t, ctx) {
       flickerTorches(torches, t);
+      // Open the gate when the monk comes near; close it when he leaves.
+      const near = ctx && Math.hypot(ctx.player.x - GX, ctx.player.z) < 16;
+      for (const l of leaves) {
+        l.open += ((near ? 1 : 0) - l.open) * Math.min(1, dt * 1.6);
+        l.hinge.rotation.y = -l.sz * l.open * 1.45;
+      }
       for (const a of animated) a.update(dt, t);
       water.material.map.offset.set(t * 0.004, t * 0.01);
       for (const g of guards) {
