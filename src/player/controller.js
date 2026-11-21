@@ -37,6 +37,10 @@ export class ThirdPersonController {
     this.firstPerson = false;
     this.floors = [];
     this.ground = 0;
+    this.walkable = null; // optional (x, z) => bool from the scene (map masks)
+    this._colliders = [];
+    this.grid = new Map();
+    this.dynamic = [];
     this.raycaster = new THREE.Raycaster();
 
     window.addEventListener('keydown', (e) => this.keys.add(e.code));
@@ -59,6 +63,44 @@ export class ThirdPersonController {
       const lim = this.firstPerson ? [-1.35, 1.35] : [-0.9, 0.55];
       this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * 0.002, lim[0], lim[1]);
     });
+  }
+
+  // Colliders are indexed in an 8 m grid; ones marked `dynamic` (NPCs) are
+  // checked every frame instead.
+  get colliders() {
+    return this._colliders;
+  }
+  set colliders(list) {
+    this._colliders = list;
+    this.grid = new Map();
+    this.dynamic = [];
+    for (const b of list) {
+      if (b.dynamic) {
+        this.dynamic.push(b);
+        continue;
+      }
+      let x0, x1, z0, z1;
+      if (b.rot === undefined) [x0, x1, z0, z1] = [b.minX, b.maxX, b.minZ, b.maxZ];
+      else {
+        const r = Math.hypot(b.hx, b.hz);
+        [x0, x1, z0, z1] = [b.cx - r, b.cx + r, b.cz - r, b.cz + r];
+      }
+      for (let gx = Math.floor(x0 / 8); gx <= Math.floor(x1 / 8); gx++)
+        for (let gz = Math.floor(z0 / 8); gz <= Math.floor(z1 / 8); gz++) {
+          const k = gx * 100003 + gz;
+          if (!this.grid.has(k)) this.grid.set(k, []);
+          this.grid.get(k).push(b);
+        }
+    }
+  }
+  near(x, z) {
+    const out = new Set(this.dynamic);
+    for (let gx = Math.floor((x - 1) / 8); gx <= Math.floor((x + 1) / 8); gx++)
+      for (let gz = Math.floor((z - 1) / 8); gz <= Math.floor((z + 1) / 8); gz++) {
+        const c = this.grid.get(gx * 100003 + gz);
+        if (c) for (const b of c) out.add(b);
+      }
+    return out;
   }
 
   setFirstPerson(on) {
@@ -93,8 +135,19 @@ export class ThirdPersonController {
       const cos = Math.cos(this.yaw);
       const dx = ix * cos + iz * sin;
       const dz = -ix * sin + iz * cos;
+      const ox = this.pos.x;
+      const oz = this.pos.z;
       this.pos.x += dx * this.speed * dt;
       this.pos.z += dz * this.speed * dt;
+      // Stay on walkable ground (slide along the edge, axis by axis).
+      if (this.walkable && !this.walkable(this.pos.x, this.pos.z)) {
+        if (this.walkable(this.pos.x, oz)) this.pos.z = oz;
+        else if (this.walkable(ox, this.pos.z)) this.pos.x = ox;
+        else {
+          this.pos.x = ox;
+          this.pos.z = oz;
+        }
+      }
       // Turn the monk toward the movement direction (first person: face the view).
       const want = this.firstPerson ? this.yaw : Math.atan2(-dx, -dz);
       let diff = want - this.facing;
@@ -119,8 +172,9 @@ export class ThirdPersonController {
 
   collide() {
     const p = this.pos;
+    const nearby = this.near(p.x, p.z);
     for (let iter = 0; iter < 3; iter++) {
-      for (const b of this.colliders) {
+      for (const b of nearby) {
         if (!active(b, p.y)) continue;
         if (b.rot !== undefined) {
           this.collideOBB(p, b);
@@ -217,7 +271,9 @@ export class ThirdPersonController {
       const x = pivot.x + back.x * s;
       const y = pivot.y + back.y * s;
       const z = pivot.z + back.z * s;
-      if (this.colliders.some((b) => y < (b.h ?? Infinity) && y > (b.y0 ?? -Infinity) && this.pointInCollider(x, z, b, 0.25))) {
+      let hitC = false;
+      for (const b of this.near(x, z)) if (y < (b.h ?? Infinity) && y > (b.y0 ?? -Infinity) && this.pointInCollider(x, z, b, 0.25)) hitC = true;
+      if (hitC) {
         dist = Math.max(0.4, s - 0.3);
         break;
       }
