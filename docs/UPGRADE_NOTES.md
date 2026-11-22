@@ -118,3 +118,32 @@ So most of the visible flicker when walking is **texture shimmer**, which the ve
   - The textured "nudge the camera" test now only flags one-pixel texel edges, which is the intended nearest-neighbour look.
   - Distant cobbles and flagstones no longer sparkle.
 - **Cost:** +~19k triangles (the shorter ground strips), same draw calls. All 6 scenes load without errors.
+
+## Phase 2: modular building kit (done)
+- **The kit** (`BuildingSet.addKit` in `buildings.js`, archetype `kit`): each house is a seeded **body + roof + add-ons + colours**.
+  - Bodies: `box`, `L` (a back range plus a forward wing around a small yard), `chamfer` (cut front corners, with corner windows), `jetty` (overhanging timber upper floor), `tower`.
+  - Roofs: `gable` (ridge either way), `hip`, `mansard` (steep lower slopes with dormers), `shed` (a lean-to with gable infill), `stepped` (crow steps), `cross` (cross gables on L-houses), `spire` and `pyramid` (towers).
+  - Add-ons: dormers, bay (oriel) windows, balconies, 0–2 chimneys, outside wooden stairs to a first-floor door (L-houses), shop fronts with display windows and awnings, hanging signs, timber framing, shutters, flower boxes, quoins and string courses.
+- **Knobs:** `KIT` (exported):
+  - weights for bodies, roofs and add-ons
+  - the eaves height range
+  - district palettes (`default`, `merchant` near the Guildhall, `castle` with more stone near the Crownkeep); lots carry `district`
+  - per-lot overrides `kitBody` and `kitRoof` (for design and debugging)
+  - `ARCHETYPE_WEIGHTS` keeps the older hand-made archetypes (shop, arcade, baroque, turret, church and so on) in the mix, with about 55 % of houses coming from the kit
+- **Doors:** every building records its front door in world space (`BuildingSet.doors`: position, facing, width, lot and use: house, shop or tavern). This is for Phase 5.
+- **Optimisation:**
+  - **Texture atlas** (`src/retro/atlas.js`): all 13 opaque building textures are packed into one 512 px canvas. Each vertex carries its tile rectangle and the shader wraps UVs with `fract()`, so tiling, nearest filtering and the vertex snap are unchanged.
+    - A chunk of houses is now about 5 draw calls (walls, details, awnings, lit windows, dark windows) instead of about 16.
+    - Merging per chunk beats one draw call per house or instancing: a whole 100 m chunk with hundreds of windows and chimneys costs the same few calls.
+  - **The train:** each car's static parts are merged per material. Only the platform-side door leaves and the cab lamps stay separate, about 70 → 15 meshes per car.
+  - LOD and culling are unchanged (detailed within 150 m, cheap shells to 520 m, skyline to 640 m, all inside the fog).
+- **Numbers (Phase 0 baseline → now):**
+
+| Pose | Draw calls | Triangles |
+|---|---|---|
+| Bridge spawn | 924 → **860** | 335k → **327k** |
+| Market | 557 → **517** | 351k → **332k** |
+| Cathedral square | 283 → **230** | 285k → **295k** |
+
+  More shapes, fewer calls.
+- **Also fixed:** skyline houses in the metro scene no longer poke down through the station vaults (they now keep clear of every station hall).

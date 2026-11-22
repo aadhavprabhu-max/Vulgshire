@@ -572,7 +572,9 @@ function buildMetro() {
       avoid: (x, z, r) => {
         if (TER.waterNear(x, z, r + 2) || Math.hypot(x - 205, z) < 95 + r) return true;
         const q = nearLine(x, z);
-        return Math.abs(q.d) < 9 + r && q.s > OPEN[0] - 10 && q.s < OPEN[1] + 10;
+        if (Math.abs(q.d) < 9 + r && q.s > OPEN[0] - 10 && q.s < OPEN[1] + 10) return true;
+        // Station halls rise above street level: keep houses off their vaults.
+        return Math.abs(q.d) < 22 + r && STATION_X.some((sx) => Math.abs(q.s - sx) < HALL + 18 + r);
       },
     }).map((l) => ({ ...l, y: 0 }));
     const town = createChunkedTown({ lots, root: world, cell: 250, near: 0, far: 700, litChance: 0.4 });

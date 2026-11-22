@@ -18,6 +18,11 @@ if (uJitter > 0.5) {
 `;
 
 function onBeforeCompile(shader) {
+  applySnap(shader);
+}
+
+/** Add the vertex snap to a shader (for materials with their own onBeforeCompile). */
+export function applySnap(shader) {
   shader.uniforms.uJitter = retroUniforms.uJitter;
   shader.uniforms.uSnap = retroUniforms.uSnap;
   shader.vertexShader = 'uniform float uJitter;\nuniform vec2 uSnap;\n' + shader.vertexShader.replace('#include <fog_vertex>', SNAP);

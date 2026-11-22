@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BuildingSet, ARCHETYPES } from './buildings.js';
+import { BuildingSet, pickArchetype } from './buildings.js';
 import { mulberry } from './kit.js';
 
 // Town layout helpers built on BuildingSet (varied buildings).
@@ -10,7 +10,7 @@ const pickType = (rnd, churchChance, towerBias = 0) => {
   const r = rnd();
   if (r < churchChance) return 'church';
   if (r < churchChance + towerBias) return 'tower';
-  return ARCHETYPES[Math.floor(rnd() * ARCHETYPES.length)];
+  return pickArchetype(rnd());
 };
 
 /** Scatter varied houses in a rectangle (skylines, distant districts). */

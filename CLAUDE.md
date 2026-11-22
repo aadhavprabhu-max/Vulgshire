@@ -160,6 +160,10 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 ## Buildings (`src/scenes/buildings.js`, `town.js`)
 
+- **The modular kit** (archetype `kit`, about 55 % of houses): a seeded body (`box`, `L`, `chamfer`, `jetty`, `tower`) + roof (`gable`, `hip`, `mansard`, `shed`, `stepped`, `cross`, `spire`, `pyramid`) + add-ons (dormers, bays, balconies, chimneys, outside stairs, shop fronts, signs). Tune it with `KIT` (weights, height range, district palettes) and `ARCHETYPE_WEIGHTS`. Lots can force `kitBody` and `kitRoof`.
+- **Atlas:** every opaque building texture is packed into one atlas (`src/retro/atlas.js`, per-vertex `tile` rect + `fract()` tiling), so a chunk of houses is about 5 draw calls. Add new building textures to `texFor` in `materials()`.
+- `BuildingSet.build()` also returns `doors` (world-space front doors with lot and use).
+
 - Archetypes: `gable`, `stepped` (crow-stepped gable), `long` (eaves to the street, dormers), `jetty` (overhanging half-timbered upper floors), `hip` (merchant house), `tower` (tower house), `shop` (awning and display window), `church`. Each also varies in size, pastel plaster colour, roof material and tint, chimneys, doors and lit windows.
 - Detail level `high` (walkable streets) adds: stone sills, lintels and jambs on windows; painted shutters (some closed); flower boxes; stone door surrounds with steps; door lanterns; plinths; corner quoins; string courses; ridge caps; chimney pots; carved brackets under jetties; oriel (bay) windows; wooden balconies; shop signs. Skylines use `low`.
 - 128 px textures: weathered lime plaster (3 m repeat), three timber-frame patterns sized to one 3 m storey, moss-flecked clay tiles and slates, town ashlar.

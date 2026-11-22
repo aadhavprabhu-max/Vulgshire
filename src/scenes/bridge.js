@@ -481,6 +481,9 @@ function buildZone() {
     slotNear(x, z, r) ||
     (x > 92 - r && x < 106 + r && Math.abs(z) < 92);
   const lots = lotsAlongStreets({ seed: 5, streets, blocked, infillBounds: [-330, 915, -140, 425], infillCount: 4200 });
+  // District palettes for the house kit: richer colours in the Merchants'
+  // Quarter, more stone near the Crownkeep.
+  for (const l of lots) l.district = Math.hypot(l.x - ghX, l.z - ghZ) < 170 ? 'merchant' : l.x > 60 && l.x < 190 && l.z < 40 ? 'castle' : 'default';
   for (const l of lots) colliders.push({ cx: l.x, cz: l.z, hx: l.w / 2 + 0.35, hz: l.d / 2 + 0.35, rot: l.rot });
   const town = createChunkedTown({ lots, root, near: 150, far: 520, litChance: 0.38 });
 
