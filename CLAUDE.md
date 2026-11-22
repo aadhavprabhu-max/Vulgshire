@@ -71,7 +71,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - Camera near/far is 0.2 / 800. Press **P** (or `?stats=1`) for FPS, triangles and draw calls.
 - Glowing flowers are unlit `MeshBasicMaterial` crossed quads (instanced).
 - Glowing things (lit windows, potions, stained glass, flames) use unlit `MeshBasicMaterial`. Real point lights are kept few: the bridge lights only every other post torch.
-- Big skylines (town, castle) are merged into a few meshes. The Crownkeep is built at map scale and then scaled up by 1.45 around the hill top so it dominates the view.
+- Big skylines (town, castle) are merged into a few meshes. The Crownkeep is built at map scale and then scaled up by 1.8 around the hill top so it dominates the view. Its materials use `landmarkMaterial()` (45 % fog) so it reads across the city.
 
 ## Scene placement on the map
 
@@ -88,7 +88,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **River:** traced from the map as a centreline (`RIVER_PX`), half-width 21 m, with quay walls, low parapets and moored boats. It flows south into the lake, and it is the only river in this zone.
 - **Bridge:** 54 m long with six arches, battlements, post torches (two with smoke), the west bridge tower (the camera starts in it, like ref 03), and guards patrolling to the castle gate.
 - **West bank:** the main road SW (toward the Old Town), the west road, a street under the north city wall, north–south streets, alleys, the riverside lane, and a market square with a well. The north city wall has towers.
-- **East bank:** the castle road, riverside lane and side street, and the closed Crownkeep gatehouse. The Crownkeep sits on its hill at x ≈ 205 (scaled ×1.45).
+- **East bank:** the castle road (torch-lined), riverside lane and side street, and the Crownkeep gatehouse. The Crownkeep sits on its hill at x ≈ 205: `CROWNKEEP` in `castle.js` (scale ×1.8, hill top r 66, base r 106), shared by the North Shore and the metro crossing. It's built after `docs/keep_reference.png` (a cluster of gothic towers with needle spires). Its fires, smoke and embers only show at night (`castle.setNight(k)`).
 - **Bounds:** walkable x −155…98, z −78…88, with invisible walls and wooden barricades wherever a street leaves the zone. Skyline-only districts continue beyond.
 - **Colliders:** axis-aligned `{minX,maxX,minZ,maxZ}` or rotated `{cx,cz,hx,hz,rot}`. An optional `h` (height) lets the camera pass over low things like railings; without `h` the camera treats the collider as a full-height wall.
 

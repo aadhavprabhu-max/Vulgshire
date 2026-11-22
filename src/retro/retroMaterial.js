@@ -53,3 +53,31 @@ export function refreshSceneMaterials(root) {
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
   });
 }
+
+/**
+ * A landmark material: thinner fog (fogScale < 1) so a hero building reads
+ * through the haze from across the city, plus the usual vertex snap.
+ */
+export function landmarkMaterial(material, fogScale = 0.5) {
+  material.onBeforeCompile = (shader) => {
+    applySnap(shader);
+    shader.uniforms.uFogScale = { value: fogScale };
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uFogScale;')
+      .replace(
+        '#include <fog_fragment>',
+        `#ifdef USE_FOG
+          #ifdef FOG_EXP2
+            float fd = fogDensity * uFogScale;
+            float fogFactor = 1.0 - exp( - fd * fd * vFogDepth * vFogDepth );
+          #else
+            float fogFactor = smoothstep( fogNear, fogFar / uFogScale, vFogDepth );
+          #endif
+          gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+        #endif`,
+      );
+  };
+  material.customProgramCacheKey = () => 'landmark-' + fogScale;
+  material.userData.retroPatched = true;
+  return material;
+}

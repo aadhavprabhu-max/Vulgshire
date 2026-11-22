@@ -7,7 +7,7 @@ import { createMapTerrain } from './mapterrain.js';
 import { createMetroLine, bendGroup, bendBox, bendAABB, toMapPx, railY, PROFILE } from './metroline.js';
 import { createService } from './trainservice.js';
 import { LOCATIONS } from '../data/world.js';
-import { buildCastle } from './castle.js';
+import { buildCastle, CROWNKEEP as CK, CROWNKEEP_PRECINCT } from './castle.js';
 import { clockFace } from './landmarks.js';
 import { createTrain, CAR_W, FLOOR, CAR_L, DOORS, DOOR_W, constrainInCar } from './train.js';
 import { createPerson, PALETTES } from '../characters/people.js';
@@ -570,7 +570,7 @@ function buildMetro() {
       count: 700,
       bounds: [cxw - 320, cxw + 320, czw - 260, czw + 160],
       avoid: (x, z, r) => {
-        if (TER.waterNear(x, z, r + 2) || Math.hypot(x - 205, z) < 95 + r) return true;
+        if (TER.waterNear(x, z, r + 2) || Math.hypot(x - CK.x, z - CK.z) < CROWNKEEP_PRECINCT + r) return true;
         const q = nearLine(x, z);
         if (Math.abs(q.d) < 9 + r && q.s > OPEN[0] - 10 && q.s < OPEN[1] + 10) return true;
         // Station halls rise above street level: keep houses off their vaults.
@@ -579,16 +579,16 @@ function buildMetro() {
     }).map((l) => ({ ...l, y: 0 }));
     const town = createChunkedTown({ lots, root: world, cell: 250, near: 0, far: 700, litChance: 0.4 });
     town.update(cxw, czw);
-    const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(55, 89, 12, 12, 1), 6), M.cobble);
-    hill.position.set(205, 6, 0);
+    const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(CK.r, CK.r + CK.slope, CK.top, 12, 1), 6), M.cobble);
+    hill.position.set(CK.x, CK.top / 2, CK.z);
     world.add(hill);
     const keep = new THREE.Group();
-    const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, 12);
-    castle.group.position.set(0, -12, 0);
+    const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, CK.top);
+    castle.group.position.set(0, -CK.top, 0);
     keep.add(castle.group);
-    keep.position.set(205, 12, 0);
+    keep.position.set(CK.x, CK.top, CK.z);
     keep.rotation.y = -Math.PI / 2;
-    keep.scale.setScalar(1.45);
+    keep.scale.setScalar(CK.scale);
     world.add(keep);
     animated.push(...castle.animated);
   }

@@ -147,3 +147,26 @@ So most of the visible flicker when walking is **texture shimmer**, which the ve
 
   More shapes, fewer calls.
 - **Also fixed:** skyline houses in the metro scene no longer poke down through the station vaults (they now keep clear of every station hall).
+
+## Phase 3: the keep (done)
+- `castle.js` is rebuilt after `docs/keep_reference.png`, a dense cluster of gothic towers:
+  - **Towers:** each one is a square shaft with corner buttresses and pinnacles, an octagonal belfry full of lit lancets, and a needle spire with lit lucarnes and a finial.
+  - **The Great Spire** stands just right of centre and is the tallest, about 160 m. **The Royal Tower** on the right is a tall block of lit windows.
+  - **Left of centre:** a medium spire, then a cluster of smaller spires and round turrets with conical caps.
+  - **Palace:** four ranges with steep roofs, ridge pinnacles and lit dormers.
+  - **Front:** a crenellated curtain wall with square towers, corner turrets and a twin-towered gatehouse.
+- **Scale:** ×1.8 (was ×1.45) on a bigger hill (top r 66, base r 106). Both scenes share `CROWNKEEP` and `CROWNKEEP_PRECINCT`, and houses keep out of the precinct.
+  - The castle road has a walkable corridor through the gate, so the gate portal is still reachable (tested: walking in still loads Inside the Crownkeep).
+  - Heights are tuned so the whole cluster fits in the frame from the bridge, like the reference.
+- **Light:**
+  - Warm lit windows and belfries.
+  - Additive glow sprites in every belfry.
+  - Two big amber fill lights on the facade.
+  - Lighter slate with a faint violet self-glow, so the needles read against the sky.
+  - Landmark materials use **45 % fog** (`landmarkMaterial()`), so the keep shows over the rooftops from across the district.
+- **Fires only at night:**
+  - The roof fires, wall braziers, smoke columns and embers are in `castle.nightObjects`.
+  - `castle.setNight(k)` hides them by day and fades the glows and fill lights. The day/night cycle (Phase 4) drives it.
+- **Torch-lined approach:** post torches on both sides of the castle road from the bridge to the gate.
+- **Cost:** draw calls at the bridge are 925 (baseline 924), and there are fewer triangles than the baseline.
+- **Still off:** the night sky is darker than the reference's purple sky, so the spires are best seen against the new sky (Phase 4). `052-keep-silhouette-test-purple-sky.png` shows the shapes against a purple background.
