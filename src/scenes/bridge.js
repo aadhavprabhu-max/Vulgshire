@@ -5,9 +5,10 @@ import { street, lotsAlongStreets, streetGeometry, scatterLots } from './town.js
 import { createMapTerrain } from './mapterrain.js';
 import { createChunkedTown } from './chunks.js';
 import { buildStation, buildCathedralExterior, buildGuildhall } from './landmarks.js';
-import { signTex } from './metro.js';
-import { createTrain, TRAIN_L } from './train.js';
-import { createMetroLine, bendGroup, bendBox } from './metroline.js';
+import { signTex, crossWall } from './metro.js';
+import { createService } from './trainservice.js';
+import { createTrain } from './train.js';
+import { createMetroLine, bendGroup, bendBox, railY, PROFILE } from './metroline.js';
 import METRO from '../data/metro.json';
 import { smokeColumn, embers } from './fx.js';
 import { buildCastle } from './castle.js';
@@ -103,10 +104,33 @@ function buildZone() {
   const inBridge = (x, z) => x > BRIDGE_BOX.x0 && x < BRIDGE_BOX.x1 && z > BRIDGE_BOX.z0 && z < BRIDGE_BOX.z1;
   const inPrecinct = (x, z) => Math.hypot(x - CASTLE.x, z - CASTLE.z) < CASTLE.r + CASTLE.slope + 3;
   const land = (x, z) => !T.isWater(x, z);
-  const walkable = (x, z) => inBridge(x, z) || (T.inRegion(x, z) && land(x, z) && !inPrecinct(x, z));
-  const water = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(2400, 1600), 300), M.water);
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(300, WATER_Y, 300);
+  // The Pilgrim's Way runs in the open here: a slot (cutting + viaduct) in the ground.
+  const ROUTE = createMetroLine('II');
+  const OPEN = PROFILE.open;
+  const slotBox = (() => {
+    const xs = [];
+    const zs = [];
+    for (let s2 = OPEN[0] - 2; s2 <= OPEN[1] + 2; s2 += 2) {
+      const [x, z] = ROUTE.toWorld(s2, 0);
+      xs.push(x);
+      zs.push(z);
+    }
+    return [Math.min(...xs) - 6, Math.max(...xs) + 6, Math.min(...zs) - 6, Math.max(...zs) + 6];
+  })();
+  const slot = (x, z) => {
+    if (x < slotBox[0] || x > slotBox[1] || z < slotBox[2] || z > slotBox[3]) return false;
+    const q = ROUTE.toLine(x, z);
+    return q.s > OPEN[0] - 1 && q.s < OPEN[1] + 1 && Math.abs(q.d) < 3.4;
+  };
+  // Keep houses and props out of the cutting (with r metres of margin).
+  const slotNear = (x, z, r) => {
+    if (x < slotBox[0] - r - 20 || x > slotBox[1] + r + 20 || z < slotBox[2] - r - 20 || z > slotBox[3] + r + 20) return false;
+    const q = ROUTE.toLine(x, z);
+    return q.s > OPEN[0] - 25 - r && q.s < OPEN[1] + 25 + r && Math.abs(q.d) < 5.5 + r;
+  };
+  const walkable = (x, z) => inBridge(x, z) || (T.inRegion(x, z) && land(x, z) && !inPrecinct(x, z) && !slot(x, z));
+  // Water only where the map has water (so the slot never floods).
+  const water = new THREE.Mesh(T.buildWater({ px0: 300, px1: 1470, py0: 0, py1: 760, y: WATER_Y, skip: slot }), M.water);
   root.add(water);
   {
     const terr = T.buildGround({
@@ -117,6 +141,7 @@ function buildZone() {
       waterY: WATER_Y,
       skip: (x, z) => Math.abs(z) < 6.5 && Math.abs(x) < 33,
       parapetWhere: (x, z) => T.inRegion(x, z),
+      waterAt: slot,
     });
     const ground = new THREE.Mesh(terr.ground, M.cobble);
     ground.receiveShadow = true;
@@ -356,47 +381,69 @@ function buildZone() {
       landmarks.push({ footprint: [x - 4, x + 4, z - 4, z + 7] });
     }
   }
-  // The rail viaduct over the north river, on the Pilgrim's Way's real curve.
+  // The open-air stretch of the Pilgrim's Way (shared heights with the metro scene):
+  // out of a tunnel mouth, up a walled cutting, over the river on a viaduct at
+  // street level, down a cutting and back into a tunnel.
   const viaduct = (() => {
-    const route = createMetroLine('II');
-    const S0 = 140;
-    const S1 = 196;
-    const RY = 4.0; // rail height on the viaduct
+    const [b0, b1] = PROFILE.bridge;
     const lr = new THREE.Group();
-    const deck = [boxGeo(S1 - S0, 1.4, 6.2, (S0 + S1) / 2, RY - 0.7, 0, 0, 2)];
-    for (const sd of [-1, 1]) deck.push(boxGeo(S1 - S0, 1.1, 0.4, (S0 + S1) / 2, RY + 0.55, sd * 2.9, 0, 1));
-    for (let k = 0; k <= 4; k++) deck.push(boxGeo(2.2, RY + 4, 3.2, S0 + ((S1 - S0) * k) / 4, (RY - 4) / 2 - 0.7, 0, 0, 1));
-    for (const [a, b] of [
-      [S0 - 6, S0],
-      [S1, S1 + 6],
-    ])
-      deck.push(boxGeo(b - a, RY + 3.5, 9, (a + b) / 2, (RY + 3.5) / 2, 0, 0, 1));
-    lr.add(mergedMesh(deck, M.stone, { cast: true }));
+    const bed = [boxGeo(OPEN[1] - OPEN[0] + 40, 0.1, 7, (OPEN[0] + OPEN[1]) / 2, -0.05, 0, 0, 2)];
+    lr.add(mergedMesh(bed, lambert(tex.cobble(), { color: 0x4a4440 })));
     const rails = [];
-    for (const rz of [-0.72, 0.72]) rails.push(boxGeo(S1 - S0, 0.16, 0.12, (S0 + S1) / 2, RY + 0.22, rz, 0, 1));
-    lr.add(mergedMesh(rails, M.iron));
-    for (const [sx, rot] of [
-      [S0 + 0.02, -Math.PI / 2],
-      [S1 - 0.02, Math.PI / 2],
+    const sleepers = [];
+    for (const rz of [-0.72, 0.72]) rails.push(boxGeo(OPEN[1] - OPEN[0] + 40, 0.16, 0.12, (OPEN[0] + OPEN[1]) / 2, 0.22, rz, 0, 1));
+    for (let x = OPEN[0] - 20; x < OPEN[1] + 20; x += 0.9) sleepers.push(boxGeo(0.25, 0.14, 2.3, x, 0.07, 0, 0, 1));
+    lr.add(mergedMesh(rails, M.iron), mergedMesh(sleepers, M.wood));
+    // Tunnel mouths with stone rings, and a dark tunnel behind each.
+    for (const [cx, dirn] of [
+      [OPEN[0], -1],
+      [OPEN[1], 1],
     ]) {
-      const mouth = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 4), new THREE.MeshBasicMaterial({ color: 0x050404 }));
-      mouth.rotation.y = rot;
-      mouth.position.set(sx, RY + 2, 0);
-      lr.add(mouth);
+      lr.add(crossWall(cx, 1.6, -9, 9, -railY(cx) + 0.2, [{ z0: -2.9, z1: 2.9, bottom: -0.2, spring: 3.4 }], M.stone));
+      const tun = [];
+      for (const sz of [-1, 1]) tun.push(boxGeo(20, 6, 0.6, cx + dirn * 10, 3, sz * 2.9, 0, 2));
+      tun.push(boxGeo(20, 0.3, 6.4, cx + dirn * 10, 6.15, 0, 0, 2));
+      lr.add(mergedMesh(tun, lambert(tex.darkStone(), { color: 0x3a3840 })));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.05, 0.3, 4, 12, Math.PI), M.stone);
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(cx - dirn * 0.85, 3.4, 0);
+      lr.add(ring);
     }
-    const bent = bendGroup(route, lr);
-    root.add(bent.group);
-    for (const b of [
-      { minX: S0 - 6.5, maxX: S0 + 0.3, minZ: -5, maxZ: 5 },
-      { minX: S1 - 0.3, maxX: S1 + 6.5, minZ: -5, maxZ: 5 },
-    ])
-      colliders.push(...bendBox(route, b));
-    const pts = [];
-    for (let s2 = S0 - 8; s2 <= S1 + 8; s2 += 4) for (const d of [-6, 6]) pts.push(route.toWorld(s2, d));
-    landmarks.push({ footprint: [Math.min(...pts.map((q) => q[0])), Math.max(...pts.map((q) => q[0])), Math.min(...pts.map((q) => q[1])), Math.max(...pts.map((q) => q[1]))] });
+    // The viaduct: deck and low arches over the river, parapets with lanterns.
+    const len = b1 - b0;
+    const deck = new THREE.Shape();
+    deck.moveTo(b0, WATER_Y - 1);
+    deck.lineTo(b1, WATER_Y - 1);
+    deck.lineTo(b1, -0.1);
+    deck.lineTo(b0, -0.1);
+    deck.lineTo(b0, WATER_Y - 1);
+    const spans = 7;
+    for (let k = 0; k < spans; k++) deck.holes.push(archHole(b0 + (len * k) / spans + 1.1, b0 + (len * (k + 1)) / spans - 1.1, WATER_Y - 0.9, WATER_Y - 0.5, 0.5));
+    const dg = scaleUV(new THREE.ExtrudeGeometry(deck, { depth: 6.6, bevelEnabled: false }), 0.5);
+    dg.translate(0, 0, -3.3);
+    lr.add(new THREE.Mesh(dg, M.stone));
+    const par = [];
+    for (const sz of [-1, 1]) {
+      par.push(boxGeo(len, 1.1, 0.4, (b0 + b1) / 2, 0.55, sz * 3.3, 0, 1));
+      for (let k = 0; k <= spans; k++) par.push(boxGeo(0.8, 1.6, 0.8, b0 + (len * k) / spans, 0.8, sz * 3.3, 0, 1));
+    }
+    lr.add(mergedMesh(par, M.stone));
+    for (let k = 1; k < spans; k += 2)
+      for (const sz of [-1, 1]) {
+        const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.42, 0.3), M.lit);
+        l.position.set(b0 + (len * k) / spans, 2.6, sz * 3.3);
+        lr.add(l);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.6, 5), M.iron);
+        post.position.set(b0 + (len * k) / spans, 1.6, sz * 3.3);
+        lr.add(post);
+      }
+    root.add(bendGroup(ROUTE, lr).group);
+    // A train shuttling through: the same 1D service as the metro, between two
+    // stops hidden in the tunnels.
     const train = createTrain();
     root.add(train.group);
-    return { train, route, S0, S1, RY, t: 0 };
+    const svc = createService({ stops: [OPEN[0] - 70, OPEN[1] + 70], dwell: 6 });
+    return { train, svc };
   })();
   const paving = streets.map((s) => streetGeometry(s, 0.015));
   for (const q of squares) {
@@ -425,6 +472,7 @@ function buildZone() {
     (Math.abs(z) < 7 + r && x > -BX - 9 && x < BX + 2) ||
     squares.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + r) ||
     inFootprint(x, z, r) ||
+    slotNear(x, z, r) ||
     (x > 92 - r && x < 106 + r && Math.abs(z) < 92);
   const lots = lotsAlongStreets({ seed: 5, streets, blocked, infillBounds: [-330, 915, -140, 425], infillCount: 4200 });
   for (const l of lots) colliders.push({ cx: l.x, cz: l.z, hx: l.w / 2 + 0.35, hz: l.d / 2 + 0.35, rot: l.rot });
@@ -438,7 +486,7 @@ function buildZone() {
     seed: 31,
     count: 1100,
     bounds: [-470, 1080, -260, 640],
-    avoid: (x, z, r) => (T.inRegion(x, z) && !inPrecinct(x, z)) || T.waterNear(x, z, r + 2) || inPrecinct(x, z) || inFootprint(x, z, r) || z < -150,
+    avoid: (x, z, r) => (T.inRegion(x, z) && !inPrecinct(x, z)) || T.waterNear(x, z, r + 2) || inPrecinct(x, z) || inFootprint(x, z, r) || slotNear(x, z, r) || z < -150,
   });
   const skyline = createChunkedTown({ lots: skyLots, root, cell: 250, near: 0, far: 640, litChance: 0.3 });
 
@@ -603,6 +651,7 @@ function buildZone() {
       return T.toPx(p.x, p.z);
     },
     lanternIntensity: 3,
+    debug: { viaduct },
     env: {
       fog: { color: 0x170d20, density: 0.0052 },
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
@@ -610,19 +659,12 @@ function buildZone() {
     },
     update(dt, t, ctx) {
       flickerTorches(torches, t);
-      // A train crosses the viaduct every 40 seconds (alternating directions).
+      // The street-side train: one 1D service, every car derived from its distance.
       if (viaduct) {
-        viaduct.t = (viaduct.t + dt) % 80;
-        const ph = viaduct.t % 40;
-        const k = Math.min(1, ph / 14);
-        const a = viaduct.S0 - TRAIN_L / 2 - 6;
-        const b = viaduct.S1 + TRAIN_L / 2 + 6;
-        const sc = viaduct.t < 40 ? a + (b - a) * k : b - (b - a) * k;
-        viaduct.train.placeOnCurve(viaduct.route.frame, sc, viaduct.RY);
-        for (const car of viaduct.train.cars) {
-          const cs = sc + car.offset;
-          car.group.visible = ph < 14 && cs > viaduct.S0 - 3 && cs < viaduct.S1 + 3;
-        }
+        viaduct.svc.update(dt);
+        const S = viaduct.svc.state;
+        viaduct.train.place(ROUTE.frame, railY, S.distance, { dir: S.dir, travelled: S.travelled });
+        viaduct.train.setDoors(0);
       }
       // Stream detailed houses near the player; far ones stay simple.
       if (ctx?.player) {
