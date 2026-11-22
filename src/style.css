@@ -27,3 +27,8 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
 #metromap .here { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #e02020; border: 2px solid #fff4d8; box-shadow: 0 0 0 4px rgba(224, 32, 32, 0.35); animation: herePulse 1.2s infinite; }
 #metromap .hint { position: absolute; right: 10px; bottom: 6px; font: 12px Georgia, serif; color: #3a2010; }
 @keyframes herePulse { 50% { box-shadow: 0 0 0 10px rgba(224, 32, 32, 0); } }
+#stats {
+  position: fixed; right: 8px; top: 8px; z-index: 20; pointer-events: none;
+  font: 12px/1.35 monospace; white-space: pre; color: #f0c27a;
+  background: rgba(10, 6, 14, 0.78); border: 1px solid #5a4630; padding: 4px 7px;
+}

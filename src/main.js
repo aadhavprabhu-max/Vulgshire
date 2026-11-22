@@ -8,6 +8,7 @@ import { ThirdPersonController } from './player/controller.js';
 import { createHud } from './ui/hud.js';
 import { validateWorld, LOCATIONS } from './data/world.js';
 import { createMetroMap } from './ui/metromap.js';
+import { createStats } from './ui/stats.js';
 
 validateWorld();
 loadSettingsFromURL();
@@ -15,6 +16,8 @@ loadSettingsFromURL();
 const canvas = document.getElementById('game');
 const retro = new RetroRenderer(canvas, settings);
 const hud = createHud(document.getElementById('hud'), settings.shot);
+const stats = createStats(retro);
+if (new URLSearchParams(location.search).get('stats') === '1') stats.toggle(true);
 const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 1000);
 
 const scene = new THREE.Scene();
@@ -146,6 +149,9 @@ window.addEventListener('keydown', (e) => {
     case 'KeyH':
       hud.toggle();
       break;
+    case 'KeyP':
+      stats.toggle();
+      break;
   }
 });
 
@@ -205,7 +211,8 @@ function frame() {
   }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   retro.render(scene, camera);
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; } };
+  stats.tick();
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; }, get perf() { return stats.last; } };
   requestAnimationFrame(frame);
 }
 frame();
