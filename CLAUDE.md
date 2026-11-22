@@ -24,7 +24,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 ## Running it
 
-- `npm install` once, then `npm run dev` and open the printed URL.
+- `npm install` once, then `npm run dev` and open the printed URL. `npm test` runs the headless train tests.
 - Controls: click to lock the mouse and look around, **WASD** or arrow keys to move, **Shift** to run, **Q/E** to turn, **V** for first or third person.
 - Scenes: **[** and **]** switch between the five scenes, or open one directly with `?scene=cloister|rooftop|bridge|crownkeep|cathedral` (or `#crownkeep` etc.). Walking through the castle gate (and back out the door) changes zone automatically, with a fade.
 - Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD. These are number keys because browsers reserve most F-keys.
@@ -110,8 +110,9 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **Data** lives in `src/data/metro.json`: all 9 lines (names, numerals, colours, `open`) and the orange stations (names, `mapPx` snapped onto the owner's drawn line, `style`). Station names on signs come from here.
 - **Station order:** Triflumen ⇄, Northern Quays, Crownkeep Stair, The Great Cathedral, Ashenwood Gate, Belfry Row, Merchants' Quarter ⇄.
 - **Route = the owner's drawing:** `tools/trace_metro_path.py` traces the centreline of the orange stroke into `metro.json` (`lines[].path`, map pixels). `src/scenes/metroline.js` turns it into a smooth 1 m-sampled curve in North Shore world coordinates, giving `frame(s)`, `toWorld(s, d)`, `toLine(x, z)` and `yawToWorld`.
-- **Built straight, then bent:** the line is about 988 m long, with stations at line metres 0, 229, 452, 627, 720, 825 and 996. Everything is built in line space (s along the track, d across it; platforms on the −d side, top at y = 1, rails at y = 0, 56 m platforms), then `bendGroup` tessellates and bends it onto the curve.
-- **Physics on the curve:** colliders and floors become rotated boxes (`bendBox`), portals become world AABBs (`bendAABB`), and NPC positions and paths are converted too. Each train car is placed on the curve (`placeOnCurve`); riding works in line space and turns your view with the train.
+- **Built straight, then bent:** the line is about 988 m long, with stations at line metres 0, 346, 452, 627, 720, 825 and 996 (Northern Quays sits just east of the river so the ramp fits). Everything is built in line space (s along the track, d across it; platforms on the −d side, top at y = 1 above the rail, 56 m platforms), then `bendGroup` tessellates and bends it onto the curve and adds the height profile.
+- **One height profile for both scenes** (`PROFILE` and `railY(s)` in `metroline.js`): streets at 0, water at −4, tunnels and stations with the rail at −10. Eased ramps climb from s 40 to 160 and fall from 214 to 300; the viaduct (s 160–214) carries the rail at street level. The line is open to the sky between the tunnel mouths at s 90 and 267 (rail about −6.3 there, so the tunnel roofs stay under the street).
+- **Physics on the curve:** colliders and floors become rotated boxes (`bendBox`), portals become world AABBs (`bendAABB`), and NPC positions and paths are converted too. 
 - **World space = North Shore coordinates:** `mapPos` is exact. The banks, city and Crownkeep around the river crossing are where they really are (built from the map masks, raised to y = 14).
 - **Station looks** follow the owner's renders (`reference/metro-station-designs.webp`). The render titles are not used as names; their looks map to stations like this:
 
@@ -126,20 +127,22 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
   | Merchants' Quarter | citadel (brick, lamps, benches, crates) |
 
   The Ironforge Junction render is spare.
-- **River crossing:** between Triflumen and Northern Quays (line metres 140–196, the lake mouth of the north river) the train leaves the tunnel and crosses the north river on a stone viaduct, under the open sky, with the city and the Crownkeep around it. Fog thins out there.
+- **River crossing:** between Triflumen and Northern Quays the train leaves a tunnel mouth (s 90), climbs a walled cutting, crosses the lake mouth of the north river on a low arched viaduct at street level (s 160–214), and dives back down a cutting into the tunnel at s 267. The city and the Crownkeep stand around it and the fog thins out there.
 - **The train** (`src/scenes/train.js`, from `reference/metro-train-design.webp`):
-  - 3 flat-faced cars in a weathered green and cream livery, with the "VULGSHIRE" crest, lanterns and sliding doors on the platform side
-  - interior with benches and lamps
-  - it shuttles end to end, dwelling about 10 s at each stop
+  - 3 flat-faced cars in a weathered green and cream livery, with the "VULGSHIRE" crest and cab lamps (white head lights at the front, red tail lights at the back, switching with direction)
+  - hollow cars: real window openings with see-through glass, real doorways with sliding leaves (platform side only), benches, poles and lamps
+  - each body sits on the chord between its two bogies (±5 m), so it pitches on ramps and yaws on curves; bellows stretch between cars; wheels spin
+  - `train.place(frame, railY, s, { dir, travelled })` places everything from one distance; `setDoors(0..1)` slides the doors
+- **The train brain** (`src/scenes/trainservice.js`): one 1D number (distance along the line) plus speed. A state machine (boarding → closing → departing → travelling → arriving → stopped → boarding) brakes from v²/2b and lands exactly on the stop mark at any frame rate (fixed 1/60 s sub-steps, frame capped at 0.25 s). Doors are closed whenever it moves. `npm test` checks this (`tests/train.test.mjs`).
 - **Riding:**
   - Entering a station calls `onEnter`, which sends the train toward you.
-  - Platform-edge colliders open only where the doors are.
-  - Stepping inside makes you ride (switching to first person), and you can leave when the doors open.
+  - Platform-edge colliders are 0.25 m chunks; only those wholly inside an open doorway open, and a threshold floor bridges the gap there.
+  - Stepping through an open door makes you ride (switching to first person). You are then held in the car's own space (`controller.carried`): the car walls and benches block you, you can walk between cars through the gangways, the view turns with the car, and you can only get off through an open platform-side door.
 - **Street side** (North Shore):
   - Grand Central Station's doors lead to Triflumen.
   - The other stations have stone kiosks placed at the nearest clear spot to their `mapPx`.
   - Platform stairs lead back up to those kiosks.
-  - The same viaduct (on the same curve) stands over the north river in the North Shore, and a train crosses it every 40 s.
+  - The same cutting, viaduct and tunnel mouths (same curve, same heights) are in the North Shore. The ground there has a slot with retaining walls and parapets; houses keep clear of it. A street-side train runs on the same train brain between two stops hidden in the tunnels.
 - **The map (M):** `src/ui/metromap.js` shows `src/assets/metro-map.jpg` (built by `tools/build_metro_map.py` from the final map plus the owner's line drawing) with a pulsing "you are here" dot. Scenes can provide `mapPos(player)`.
 - **Scene contract additions:** `onEnter(entry)`, `mapPos(player)`. The update `ctx` now includes `scene`.
 

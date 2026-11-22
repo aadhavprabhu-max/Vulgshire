@@ -76,6 +76,8 @@ function loadScene(index, entry = null) {
   controller.blockers = built.cameraBlockers;
   controller.floors = built.floors || [];
   controller.walkable = built.walkable || null;
+  controller.ground = built.ground ?? 0;
+  controller.carried = false;
   const start = (entry && built.entries?.[entry]) || { pos: built.spawn, yaw: built.spawnYaw, pitch: built.spawnPitch };
   controller.pos.copy(start.pos);
   controller.yaw = controller.facing = start.yaw;

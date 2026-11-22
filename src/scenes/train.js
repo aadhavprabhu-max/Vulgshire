@@ -1,32 +1,45 @@
 import * as THREE from 'three';
 import { tex } from '../retro/textures.js';
 
-// The Vulgshire metro train (owner's design sheet: reference/metro-train-design.webp):
-// a 3-car flat-faced train, weathered green and cream livery with rust streaks,
-// gothic trim, amber-lit windows, sliding doors, lanterns and the city crest up
-// front. Original low-poly build; all textures are drawn here in code.
-//
-// Local frame: the train runs along +x (front at +x), centred on z = 0, rails at y = 0,
-// car floor at y = FLOOR. Doors are on both sides; only the -z (platform) side opens.
+// The Vulgshire metro train (owner's design: reference/metro-train-design.webp),
+// built after the owner's train guide:
+// - hollow cars with real window openings (glass you can see through) and real
+//   doorways with sliding leaves (platform side = -z opens);
+// - each body sits on the chord between its two bogies; bogies turn with the
+//   rails; bellows stretch between cars; wheels spin with distance;
+// - cab lights swap ends with the direction of travel.
+// Car local frame: x along the car (front +x), y up from the rails, z across.
 
 export const CAR_L = 14;
 export const GAP = 0.8;
 export const CAR_W = 2.8;
-export const FLOOR = 1.0;
-const CAR_H = 3.3;
+export const FLOOR = 1.0; // floor height above the rails
+export const CAR_SPACING = CAR_L + GAP;
 export const TRAIN_L = 3 * CAR_L + 2 * GAP;
+const CAR_H = 3.3;
+const BOGIE_HALF = 5.0;
+const WHEEL_R = 0.42;
+export const DOORS = [-4.5, 3.5]; // doorway centres (car local x), both sides
+export const DOOR_W = 1.3;
+const WINDOWS = [
+  [-6.5, -5.5],
+  [-3.4, -1.9],
+  [-1.5, 0.0],
+  [0.4, 2.4],
+  [4.6, 6.5],
+];
+const WIN_Y = [FLOOR + 1.0, FLOOR + 2.25];
 
-function canvas(w, h) {
+function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
-  return c;
-}
-function toTex(c) {
+  draw(c.getContext('2d'));
   const t = new THREE.CanvasTexture(c);
   t.magFilter = t.minFilter = THREE.NearestFilter;
   t.generateMipmaps = false;
   t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
 function rng(seed) {
@@ -38,254 +51,300 @@ function rng(seed) {
   };
 }
 
-// Side of one car: 224 x 52 px for 14 m x 3.3 m (16 px per metre).
-let SIDE = null;
-function sideTex() {
-  if (SIDE) return SIDE;
-  const W = 224;
-  const H = 52;
-  const c = canvas(W, H);
-  const g = c.getContext('2d');
-  const r = rng(5);
-  const green = '#3e5a46';
-  const cream = '#b8b29c';
-  g.fillStyle = green;
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = cream;
-  g.fillRect(0, 14, W, 20); // cream window band
-  g.fillStyle = '#2c4232';
-  g.fillRect(0, 0, W, 4); // roof edge
-  // Gothic trim: a row of small pointed arches under the roof.
-  g.fillStyle = '#5a7a62';
-  for (let x = 2; x < W; x += 6) {
-    g.fillRect(x, 6, 3, 4);
-    g.fillRect(x + 1, 5, 1, 1);
-  }
-  g.fillStyle = '#20301f';
-  g.fillRect(0, 11, W, 1);
-  g.fillRect(0, 35, W, 1);
-  // Doors (two per side) and windows.
-  const doors = [40, 168];
-  for (const dx of doors) {
-    g.fillStyle = '#34503c';
-    g.fillRect(dx - 10, 8, 20, 40);
-    g.fillStyle = '#1a2418';
-    g.fillRect(dx - 10, 8, 1, 40);
-    g.fillRect(dx + 9, 8, 1, 40);
-    g.fillRect(dx, 8, 1, 40);
-    g.fillStyle = '#e8a850';
-    g.fillRect(dx - 7, 14, 5, 14);
-    g.fillRect(dx + 3, 14, 5, 14);
-  }
-  for (const [x, w] of [
-    [4, 22],
-    [64, 34],
-    [110, 22],
-    [134, 22],
-    [194, 26],
-  ]) {
-    g.fillStyle = '#1c1810';
-    g.fillRect(x - 1, 15, w + 2, 15);
-    g.fillStyle = '#f0b860';
-    g.fillRect(x, 16, w, 13);
-    g.fillStyle = '#c88838';
-    for (let k = x + 8; k < x + w; k += 9) g.fillRect(k, 16, 1, 13);
-    g.fillRect(x, 22, w, 1);
-  }
-  // Rust streaks and grime.
-  for (let i = 0; i < 90; i++) {
-    const x = Math.floor(r() * W);
-    const y = Math.floor(r() * H);
-    const len = 2 + Math.floor(r() * 10);
-    g.fillStyle = `rgba(${120 + r() * 40},${50 + r() * 20},${30},${0.25 + r() * 0.35})`;
-    g.fillRect(x, y, 1, len);
-  }
-  g.fillStyle = 'rgba(20,16,10,0.35)';
-  g.fillRect(0, 44, W, 8);
-  SIDE = toTex(c);
-  return SIDE;
-}
-
-// Flat front: big dark windscreen, "VULGSHIRE", crest, buffers.
-let FRONT = null;
-function frontTex() {
-  if (FRONT) return FRONT;
-  const c = canvas(48, 56);
-  const g = c.getContext('2d');
-  g.fillStyle = '#3e5a46';
-  g.fillRect(0, 0, 48, 56);
-  g.fillStyle = '#20301f';
-  g.fillRect(4, 6, 40, 22);
-  g.fillStyle = '#0c1014';
-  g.fillRect(6, 8, 36, 18);
-  g.fillStyle = 'rgba(120,150,170,0.25)';
-  g.fillRect(8, 9, 10, 2);
-  g.fillStyle = '#c8a04a';
-  g.font = 'bold 7px serif';
-  g.textAlign = 'center';
-  g.fillText('VULGSHIRE', 24, 37);
-  // Crest: a small shield.
-  g.fillStyle = '#8a6a2a';
-  g.fillRect(21, 40, 6, 6);
-  g.fillRect(22, 46, 4, 2);
-  g.fillStyle = '#c8a04a';
-  g.fillRect(23, 41, 2, 4);
-  const r = rng(9);
-  for (let i = 0; i < 25; i++) {
-    g.fillStyle = `rgba(130,55,30,${0.2 + r() * 0.3})`;
-    g.fillRect(Math.floor(r() * 48), Math.floor(r() * 56), 1, 2 + Math.floor(r() * 6));
-  }
-  FRONT = toTex(c);
-  return FRONT;
-}
-
-let MATS = null;
+let M = null;
 function mats() {
-  if (MATS) return MATS;
-  const side = new THREE.MeshLambertMaterial({ map: sideTex(), side: THREE.DoubleSide });
-  const front = new THREE.MeshLambertMaterial({ map: frontTex(), side: THREE.DoubleSide });
-  const end = new THREE.MeshLambertMaterial({ color: 0x34503c, side: THREE.DoubleSide });
-  const roof = new THREE.MeshLambertMaterial({ color: 0x4a6450, side: THREE.DoubleSide });
-  const under = new THREE.MeshLambertMaterial({ color: 0x1a1a1a, side: THREE.DoubleSide });
-  MATS = {
-    side,
-    front,
-    end,
-    roof,
-    under,
+  if (M) return M;
+  // Livery: 16 px per metre vertically; green below the waist, cream band, rust streaks.
+  const livery = canvasTex(64, 64, (g) => {
+    const r = rng(5);
+    g.fillStyle = '#3e5a46';
+    g.fillRect(0, 0, 64, 64);
+    g.fillStyle = '#b8b29c';
+    g.fillRect(0, 10, 64, 22); // cream band around the windows
+    g.fillStyle = '#20301f';
+    g.fillRect(0, 9, 64, 1);
+    g.fillRect(0, 32, 64, 1);
+    g.fillStyle = '#5a7a62';
+    for (let x = 1; x < 64; x += 6) g.fillRect(x, 4, 3, 3); // gothic trim
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = `rgba(${120 + r() * 40},${50 + r() * 20},30,${0.25 + r() * 0.35})`;
+      g.fillRect(Math.floor(r() * 64), Math.floor(r() * 64), 1, 2 + Math.floor(r() * 8));
+    }
+  });
+  const front = canvasTex(48, 56, (g) => {
+    g.fillStyle = '#3e5a46';
+    g.fillRect(0, 0, 48, 56);
+    g.fillStyle = '#c8a04a';
+    g.font = 'bold 7px serif';
+    g.textAlign = 'center';
+    g.fillText('VULGSHIRE', 24, 37);
+    g.fillStyle = '#8a6a2a';
+    g.fillRect(21, 40, 6, 6);
+    g.fillStyle = '#c8a04a';
+    g.fillRect(23, 41, 2, 4);
+  });
+  const L = (o) => new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, ...o });
+  M = {
+    shell: L({ map: livery }),
+    front: L({ map: front }),
+    roof: L({ color: 0x4a6450 }),
+    under: new THREE.MeshLambertMaterial({ color: 0x1a1a1a }),
     iron: new THREE.MeshLambertMaterial({ color: 0x222222 }),
     floor: new THREE.MeshLambertMaterial({ map: tex.wood(), color: 0x8a7060 }),
+    ceiling: L({ color: 0xc8c0a8 }),
     seat: new THREE.MeshLambertMaterial({ map: tex.velvet() }),
-    door: new THREE.MeshLambertMaterial({ color: 0x34503c }),
+    brass: new THREE.MeshLambertMaterial({ color: 0xb08a40 }),
+    door: L({ color: 0x34503c }),
+    glass: new THREE.MeshBasicMaterial({ color: 0x9ab0c8, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }),
     lamp: new THREE.MeshBasicMaterial({ map: tex.lanternPane() }),
+    head: new THREE.MeshBasicMaterial({ color: 0xffd890 }),
+    tail: new THREE.MeshBasicMaterial({ color: 0xc81818 }),
+    off: new THREE.MeshBasicMaterial({ color: 0x201a14 }),
     bellows: new THREE.MeshLambertMaterial({ color: 0x141414 }),
   };
-  return MATS;
+  return M;
+}
+
+// A car side wall (in the x-y plane) with window and doorway openings.
+function sideWall() {
+  const s = new THREE.Shape();
+  s.moveTo(-CAR_L / 2, FLOOR - 0.35);
+  s.lineTo(CAR_L / 2, FLOOR - 0.35);
+  s.lineTo(CAR_L / 2, FLOOR + CAR_H);
+  s.lineTo(-CAR_L / 2, FLOOR + CAR_H);
+  s.lineTo(-CAR_L / 2, FLOOR - 0.35);
+  const hole = (x0, x1, y0, y1) => {
+    const h = new THREE.Path();
+    h.moveTo(x0, y0);
+    h.lineTo(x1, y0);
+    h.lineTo(x1, y1);
+    h.lineTo(x0, y1);
+    h.lineTo(x0, y0);
+    s.holes.push(h);
+  };
+  for (const [a, b] of WINDOWS) hole(a, b, WIN_Y[0], WIN_Y[1]);
+  for (const d of DOORS) hole(d - DOOR_W / 2, d + DOOR_W / 2, FLOOR, FLOOR + 2.35);
+  const g = new THREE.ShapeGeometry(s);
+  // UVs in metres: one livery tile = 4 m along, 4 m up (64 px = 4 m).
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 4, (uv.getY(i) - FLOOR + 0.35) / 4);
+  return g;
+}
+
+function buildCar(k) {
+  const m = mats();
+  const car = new THREE.Group();
+  const add = (geo, mat, x = 0, y = 0, z = 0) => {
+    const o = new THREE.Mesh(geo, mat);
+    o.position.set(x, y, z);
+    car.add(o);
+    return o;
+  };
+  // Sides with real openings.
+  for (const sz of [-1, 1]) {
+    const w = add(sideWall(), m.shell, 0, 0, sz * CAR_W / 2);
+    if (sz > 0) w.rotation.y = 0;
+    // Glass in every window.
+    for (const [a, b] of WINDOWS) add(new THREE.PlaneGeometry(b - a, WIN_Y[1] - WIN_Y[0]), m.glass, (a + b) / 2, (WIN_Y[0] + WIN_Y[1]) / 2, sz * CAR_W / 2);
+  }
+  // Ends: cab faces on the end cars (with a windscreen), plain bulkheads with a gangway door between cars.
+  for (const sx of [-1, 1]) {
+    const isCab = (k === 0 && sx < 0) || (k === 2 && sx > 0);
+    const end = new THREE.Shape();
+    end.moveTo(-CAR_W / 2, FLOOR - 0.35);
+    end.lineTo(CAR_W / 2, FLOOR - 0.35);
+    end.lineTo(CAR_W / 2, FLOOR + CAR_H);
+    end.lineTo(-CAR_W / 2, FLOOR + CAR_H);
+    end.lineTo(-CAR_W / 2, FLOOR - 0.35);
+    const h = new THREE.Path();
+    if (isCab) {
+      h.moveTo(-1.1, FLOOR + 1.4);
+      h.lineTo(1.1, FLOOR + 1.4);
+      h.lineTo(1.1, FLOOR + 2.6);
+      h.lineTo(-1.1, FLOOR + 2.6);
+    } else {
+      h.moveTo(-0.5, FLOOR);
+      h.lineTo(0.5, FLOOR);
+      h.lineTo(0.5, FLOOR + 2.1);
+      h.lineTo(-0.5, FLOOR + 2.1);
+    }
+    end.holes.push(h);
+    const eg = new THREE.ShapeGeometry(end);
+    const uv = eg.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + CAR_W / 2) / CAR_W, (uv.getY(i) - FLOOR + 0.35) / (CAR_H + 0.35));
+    const e = add(eg, isCab ? m.front : m.shell, sx * CAR_L / 2, 0, 0);
+    e.rotation.y = sx * Math.PI / 2;
+    if (isCab) add(new THREE.PlaneGeometry(2.2, 1.2), m.glass, sx * CAR_L / 2, FLOOR + 2.0, 0).rotation.y = sx * Math.PI / 2;
+  }
+  // Roof (curved cap), floor, ceiling, underframe.
+  const capG = new THREE.CylinderGeometry(CAR_W / 2, CAR_W / 2, CAR_L, 8, 1, false, 0, Math.PI);
+  capG.rotateZ(Math.PI / 2);
+  capG.scale(1, 0.25, 1);
+  add(capG, m.roof, 0, FLOOR + CAR_H, 0);
+  add(new THREE.BoxGeometry(CAR_L, 0.1, CAR_W), m.floor, 0, FLOOR - 0.05, 0);
+  add(new THREE.PlaneGeometry(CAR_L, CAR_W), m.ceiling, 0, FLOOR + CAR_H - 0.02, 0).rotation.x = Math.PI / 2;
+  add(new THREE.BoxGeometry(CAR_L - 1.5, 0.55, CAR_W - 0.4), m.under, 0, FLOOR - 0.4, 0);
+  // Interior: velvet benches along both walls between the doors, brass poles, lamps.
+  for (const sz of [-1, 1]) {
+    for (const [a, b] of [
+      [-6.7, -5.4],
+      [-3.6, 2.6],
+      [4.4, 6.7],
+    ]) {
+      add(new THREE.BoxGeometry(b - a, 0.45, 0.5), m.seat, (a + b) / 2, FLOOR + 0.25, sz * (CAR_W / 2 - 0.3));
+      add(new THREE.BoxGeometry(b - a, 0.6, 0.08), m.seat, (a + b) / 2, FLOOR + 0.75, sz * (CAR_W / 2 - 0.06));
+    }
+  }
+  for (const d of DOORS) for (const ox of [-0.9, 0.9]) add(new THREE.CylinderGeometry(0.03, 0.03, CAR_H, 5), m.brass, d + ox, FLOOR + CAR_H / 2, 0);
+  for (const lx of [-4.5, 0, 4.5]) add(new THREE.BoxGeometry(0.4, 0.15, 0.4), m.lamp, lx, FLOOR + CAR_H - 0.1, 0);
+  // Door leaves: two per doorway, per side. They slide along the wall (outside it).
+  const leaves = [];
+  for (const sz of [-1, 1])
+    for (const d of DOORS)
+      for (const half of [-1, 1]) {
+        const leaf = add(new THREE.BoxGeometry(DOOR_W / 2, 2.35, 0.05), m.door, d + (half * DOOR_W) / 4, FLOOR + 1.175, sz * (CAR_W / 2 + 0.04));
+        const pane = new THREE.Mesh(new THREE.PlaneGeometry(DOOR_W / 2 - 0.15, 0.8), m.glass);
+        pane.position.set(0, 0.4, sz * 0.03);
+        leaf.add(pane);
+        leaves.push({ leaf, x0: d + (half * DOOR_W) / 4, half, side: sz });
+      }
+  // Cab lamps at both ends (switched by direction).
+  const ends = {};
+  for (const sx of [-1, 1]) {
+    if (!((k === 0 && sx < 0) || (k === 2 && sx > 0))) continue;
+    const lamps = [];
+    for (const sz of [-1, 1]) {
+      const l = add(new THREE.BoxGeometry(0.06, 0.32, 0.32), m.off, sx * (CAR_L / 2 + 0.03), FLOOR + 0.55, sz * 0.95);
+      lamps.push(l);
+    }
+    ends[sx] = lamps;
+  }
+  return { group: car, leaves, ends };
+}
+
+function buildBogie() {
+  const m = mats();
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.35, CAR_W - 0.3), m.iron);
+  frame.position.y = 0.6;
+  g.add(frame);
+  const wheels = [];
+  for (const wx of [-0.85, 0.85])
+    for (const wz of [-0.72, 0.72]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.12, 8), m.iron);
+      w.rotation.x = Math.PI / 2;
+      const hub = new THREE.Group();
+      hub.position.set(wx, WHEEL_R, wz);
+      hub.add(w);
+      // A spoke so the spin is visible.
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.06, WHEEL_R * 1.8, 0.14), m.under);
+      hub.add(spoke);
+      g.add(hub);
+      wheels.push(hub);
+    }
+  return { group: g, wheels };
 }
 
 export function createTrain() {
-  const M = mats();
+  const m = mats();
   const group = new THREE.Group();
   group.name = 'train';
-  const doorsL = []; // platform-side (-z) door panels that slide open
+  const cars = [];
   const blockers = [];
-  const cars = []; // { group, offset } so each car can follow a curved track
   for (let k = 0; k < 3; k++) {
-    const car = new THREE.Group();
-    const cx = -TRAIN_L / 2 + CAR_L / 2 + k * (CAR_L + GAP);
-    car.position.x = cx;
-    group.add(car);
-    cars.push({ group: car, offset: cx });
-    const head = k === 2;
-    const tail = k === 0;
-    // Body shell: materials per face [+x, -x, +y, -y, +z, -z].
-    const body = new THREE.Mesh(new THREE.BoxGeometry(CAR_L, CAR_H, CAR_W), [head || tail ? M.front : M.end, tail ? M.front : M.end, M.roof, M.under, M.side, M.side]);
-    if (tail) body.material = [M.end, M.front, M.roof, M.under, M.side, M.side];
-    body.position.y = FLOOR + CAR_H / 2 - 0.1;
-    car.add(body);
-    blockers.push(body);
-    // Curved roof cap: a flattened half-cylinder along the car.
-    const capG = new THREE.CylinderGeometry(CAR_W / 2, CAR_W / 2, CAR_L - 0.2, 8, 1, false, 0, Math.PI);
-    capG.rotateZ(Math.PI / 2);
-    capG.scale(1, 0.25, 1);
-    capG.translate(0, FLOOR + CAR_H - 0.12, 0);
-    car.add(new THREE.Mesh(capG, M.roof));
-    // Underframe and bogies.
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(CAR_L - 1, 0.6, CAR_W - 0.4), M.under);
-    frame.position.y = FLOOR - 0.35;
-    car.add(frame);
-    for (const bx of [-CAR_L / 2 + 2.2, CAR_L / 2 - 2.2]) {
-      const bog = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.45, CAR_W - 0.2), M.iron);
-      bog.position.set(bx, 0.55, 0);
-      car.add(bog);
-      for (const wx of [-0.8, 0.8])
-        for (const wz of [-1.05, 1.05]) {
-          const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.12, 10), M.iron);
-          wh.rotation.x = Math.PI / 2;
-          wh.position.set(bx + wx, 0.42, wz);
-          car.add(wh);
-        }
-    }
-    // Interior: wooden floor, velvet benches along both sides, ceiling lamps.
-    const fl = new THREE.Mesh(new THREE.BoxGeometry(CAR_L - 0.2, 0.08, CAR_W - 0.2), M.floor);
-    fl.position.y = FLOOR + 0.0;
-    car.add(fl);
-    for (const sz of [-1, 1])
-      for (const sx of [-4.4, 0, 4.4]) {
-        const seat = new THREE.Mesh(new THREE.BoxGeometry(3, 0.45, 0.5), M.seat);
-        seat.position.set(sx, FLOOR + 0.25, sz * 1.05);
-        car.add(seat);
-      }
-    for (const lx of [-4, 0, 4]) {
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.25, 0.3), M.lamp);
-      lamp.position.set(lx, FLOOR + CAR_H - 0.45, 0);
-      car.add(lamp);
-    }
-    // Sliding doors on the platform side (in front of the painted ones).
-    for (const dx of [-CAR_L / 2 + 2.5, CAR_L / 2 - 3.5]) {
-      for (const half of [-1, 1]) {
-        const d = new THREE.Mesh(new THREE.BoxGeometry(0.62, 2.45, 0.06), M.door);
-        const x0 = dx + half * 0.31;
-        d.position.set(x0, FLOOR + 1.25, -CAR_W / 2 - 0.04);
-        car.add(d);
-        doorsL.push({ mesh: d, x0, half });
-      }
-    }
-    // Bellows between cars.
-    if (k < 2) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(GAP + 0.1, CAR_H - 0.5, CAR_W - 0.6), M.bellows);
-      b.position.set(CAR_L / 2 + GAP / 2, FLOOR + (CAR_H - 0.5) / 2, 0);
-      car.add(b);
-    }
-    // Front details on the leading and trailing cars: lanterns and buffers.
-    if (head || tail) {
-      const fx = head ? CAR_L / 2 + 0.02 : -CAR_L / 2 - 0.02;
-      for (const sz of [-1, 1]) {
-        const l = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.3), M.lamp);
-        l.position.set(fx, FLOOR + 0.6, sz * 0.95);
-        car.add(l);
-        const buf = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.4, 8), M.iron);
-        buf.rotation.z = Math.PI / 2;
-        buf.position.set(fx + (head ? 0.2 : -0.2), FLOOR - 0.2, sz * 0.9);
-        car.add(buf);
-      }
-    }
+    const c = buildCar(k);
+    // offset = car centre relative to the train centre (front car = k 2 at +x).
+    const offset = (k - 1) * CAR_SPACING;
+    const bogies = [buildBogie(), buildBogie()];
+    for (const b of bogies) group.add(b.group);
+    group.add(c.group);
+    cars.push({ ...c, offset, bogies });
+    blockers.push(...c.group.children.filter((o) => o.isMesh && o.material === m.shell));
   }
-  // Warm interior light and a headlamp glow.
-  const inner = new THREE.PointLight(0xffb060, 10, 22, 1.6);
-  inner.position.set(0, FLOOR + 2.4, 0);
-  group.add(inner);
-  const head = new THREE.PointLight(0xffc880, 14, 26, 1.6);
-  head.position.set(TRAIN_L / 2 + 2, FLOOR + 1, 0);
-  group.add(head);
+  const bellows = [0, 1].map(() => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1, CAR_H - 0.6, CAR_W - 0.7), m.bellows);
+    group.add(b);
+    return b;
+  });
+  const inner = new THREE.PointLight(0xffb060, 9, 24, 1.6);
+  const head = new THREE.PointLight(0xffc880, 14, 30, 1.6);
+  group.add(inner, head);
+  const tmpA = new THREE.Vector3();
+  const tmpB = new THREE.Vector3();
+  const tmpC = new THREE.Vector3();
 
-  let open = 0;
   return {
     group,
     blockers,
     cars,
-    lights: { inner, head },
-    /** Place every car on a curve: frame(s) -> {x, z, rot}; s = train centre; y = rail height. */
-    placeOnCurve(frame, s, y = 0) {
-      group.position.set(0, 0, 0);
-      group.rotation.set(0, 0, 0);
+    /**
+     * Place the whole train from one number: the distance of its centre.
+     * frame(s) -> {x, z, ...}; railY(s) -> rail height; dir = travel direction; travelled = wheel spin.
+     */
+    place(frame, railY, s, { dir = 1, travelled = 0 } = {}) {
       for (const c of cars) {
-        const f = frame(s + c.offset);
-        c.group.position.set(f.x, y, f.z);
-        c.group.rotation.y = f.rot;
+        const cs = s + c.offset;
+        const sf = cs + BOGIE_HALF;
+        const sb = cs - BOGIE_HALF;
+        const F = frame(sf);
+        const B = frame(sb);
+        tmpA.set(F.x, railY(sf), F.z);
+        tmpB.set(B.x, railY(sb), B.z);
+        // Body on the chord between its bogies (it overhangs on curves, like a real car).
+        c.group.position.copy(tmpA).add(tmpB).multiplyScalar(0.5);
+        tmpC.subVectors(tmpA, tmpB);
+        c.group.rotation.order = 'YZX';
+        c.group.rotation.y = Math.atan2(-tmpC.z, tmpC.x);
+        c.group.rotation.z = Math.atan2(tmpC.y, Math.hypot(tmpC.x, tmpC.z));
+        c.group.rotation.x = 0;
+        c.bogies.forEach((b, i) => {
+          const f = i === 0 ? F : B;
+          const ss = i === 0 ? sf : sb;
+          b.group.position.set(f.x, railY(ss), f.z);
+          b.group.rotation.set(0, f.rot, 0);
+          for (const w of b.wheels) w.rotation.z = -travelled / WHEEL_R;
+        });
+        c.group.updateMatrixWorld();
       }
-      const fi = frame(s);
-      inner.position.set(fi.x, y + FLOOR + 2.4, fi.z);
-      const fh = frame(s + TRAIN_L / 2 + 2);
-      head.position.set(fh.x, y + FLOOR + 1, fh.z);
+      // Bellows stretched between car ends.
+      for (let k = 0; k < 2; k++) {
+        const a = cars[k].group;
+        const b = cars[k + 1].group;
+        tmpA.set(CAR_L / 2, FLOOR + (CAR_H - 0.6) / 2, 0).applyMatrix4(a.matrixWorld);
+        tmpB.set(-CAR_L / 2, FLOOR + (CAR_H - 0.6) / 2, 0).applyMatrix4(b.matrixWorld);
+        const bl = bellows[k];
+        bl.position.copy(tmpA).add(tmpB).multiplyScalar(0.5);
+        tmpC.subVectors(tmpB, tmpA);
+        bl.rotation.set(0, Math.atan2(-tmpC.z, tmpC.x), 0);
+        bl.scale.x = Math.max(0.2, tmpC.length() + 0.1);
+      }
+      const mid = cars[1].group;
+      inner.position.set(0, FLOOR + 2.4, 0).applyMatrix4(mid.matrixWorld);
+      const lead = cars[dir > 0 ? 2 : 0].group;
+      head.position.set(dir > 0 ? CAR_L / 2 + 2 : -CAR_L / 2 - 2, FLOOR + 1, 0).applyMatrix4(lead.matrixWorld);
+      // Cab switch: headlamps on the leading end, red tail lamps on the trailing end.
+      for (const c of cars)
+        for (const [sx, lamps] of Object.entries(c.ends)) for (const l of lamps) l.material = Number(sx) === dir ? m.head : m.tail;
     },
-    /** 0 = closed, 1 = open (platform side). */
+    /** Door leaves: 0 closed .. 1 open, platform side (-z) only. */
     setDoors(v) {
-      open = v;
-      for (const d of doorsL) d.mesh.position.x = d.x0 + d.half * v * 0.58;
-    },
-    get doors() {
-      return open;
+      const e = v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2; // ease in-out
+      for (const c of cars) for (const d of c.leaves) d.leaf.position.x = d.x0 + (d.side < 0 ? d.half * e * (DOOR_W / 2 - 0.02) : 0);
     },
   };
+}
+
+/**
+ * Keep a passenger inside a car, in car-local coordinates. Returns the clamped
+ * point and whether they stepped out through an open platform-side doorway.
+ */
+export function constrainInCar(p, doorsOpen) {
+  const out = { x: p.x, y: FLOOR, z: p.z, alight: false };
+  const atDoor = DOORS.some((d) => Math.abs(p.x - d) < DOOR_W / 2 - 0.25);
+  out.x = Math.max(-CAR_L / 2 + 0.35, Math.min(CAR_L / 2 - 0.35, p.x));
+  if (atDoor) {
+    if (doorsOpen && p.z < -CAR_W / 2 - 0.45) out.alight = true;
+    out.z = Math.max(doorsOpen ? -CAR_W / 2 - 0.6 : -CAR_W / 2 + 0.3, Math.min(CAR_W / 2 - 0.3, p.z));
+  } else out.z = Math.max(-CAR_W / 2 + 0.7, Math.min(CAR_W / 2 - 0.7, p.z)); // the benches
+  return out;
 }

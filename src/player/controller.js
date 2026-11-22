@@ -155,6 +155,13 @@ export class ThirdPersonController {
       this.facing += diff * Math.min(1, dt * 10);
     }
     if (this.firstPerson) this.facing = this.yaw;
+    // While carried (riding a train) the scene owns position, height and collision.
+    if (this.carried) {
+      this.character.root.position.copy(this.pos);
+      this.character.root.rotation.y = this.facing;
+      this.updateCamera();
+      return;
+    }
     this.collide();
     // Stand on the highest floor within a step; fall smoothly otherwise.
     const want = this.floorAt(this.pos.x, this.pos.z, this.pos.y);
