@@ -677,6 +677,8 @@ function buildZone() {
     },
     lanternIntensity: 3,
     debug: { viaduct, town, skyline, castle },
+    // Enterable buildings: the front doors of the detailed houses near the player.
+    doorsNear: (x, z, r) => town.doorsNear(x, z, r),
     // Day/night: the keep's fires only burn at night; torch smoke goes with the torches.
     setTime({ glow }) {
       castle.setNight(glow);

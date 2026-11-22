@@ -164,6 +164,11 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - Exits: the west door goes back to the castle gate (`bridge`, entry `gate`). The cathedral's west door and the cloister's west door lead back to the North Shore (entries `cathedral`, `cloister`).
 - Colliders use levels (`y0`/`y1`) so balustrades only block on their floor; floors handle the stairs.
 
+## Enterable buildings (`src/world/interiors.js`)
+
+- Walk into any nearby house's front door to go in. A seeded interior (house, shop, tavern or chapel) is built in the house's footprint, the city is hidden, and physics and the camera switch to the room. Walk out through the door to leave, and the room is disposed.
+- Scenes expose doors with `doorsNear(x, z, r)` (the North Shore uses the detailed town chunks). Room lighting follows the day/night clock.
+
 ## Buildings (`src/scenes/buildings.js`, `town.js`)
 
 - **The modular kit** (archetype `kit`, about 55 % of houses): a seeded body (`box`, `L`, `chamfer`, `jetty`, `tower`) + roof (`gable`, `hip`, `mansard`, `shed`, `stepped`, `cross`, `spire`, `pyramid`) + add-ons (dormers, bays, balconies, chimneys, outside stairs, shop fronts, signs). Tune it with `KIT` (weights, height range, district palettes) and `ARCHETYPE_WEIGHTS`. Lots can force `kitBody` and `kitRoof`.

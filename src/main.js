@@ -10,6 +10,7 @@ import { validateWorld, LOCATIONS } from './data/world.js';
 import { createMetroMap } from './ui/metromap.js';
 import { createStats } from './ui/stats.js';
 import { createDayNight } from './world/daynight.js';
+import { createInteriors } from './world/interiors.js';
 
 validateWorld();
 loadSettingsFromURL();
@@ -38,6 +39,16 @@ scene.add(monk.root);
 const controller = new ThirdPersonController({ camera, character: monk, canvas, colliders: [], blockers: [], spawn: new THREE.Vector3() });
 
 let current = null; // { def, built }
+// A short fade to black around a swap (zones, doors).
+function fadeSwap(fn) {
+  const el = document.getElementById('fade');
+  el.classList.add('on');
+  setTimeout(() => {
+    fn();
+    setTimeout(() => el.classList.remove('on'), 250);
+  }, 450);
+}
+const interiors = createInteriors({ scene, controller, hemi, dirLight, fog, dayNight, fade: fadeSwap, toast: (m) => hud.toast(m) });
 // Start scene: ?scene=<id> or #<id> (the hash form works on the hosted link).
 const wantedScene = new URLSearchParams(location.search).get('scene') || location.hash.slice(1);
 let sceneIndex = Math.max(0, SCENES.findIndex((s) => s.id === wantedScene));
@@ -50,6 +61,7 @@ function disposeTree(root) {
 }
 
 function loadScene(index, entry = null) {
+  interiors.reset();
   if (current) {
     scene.remove(current.built.root, current.built.sky);
     disposeTree(current.built.root);
@@ -93,6 +105,7 @@ function loadScene(index, entry = null) {
 
   built.onEnter?.(entry);
   dayNight.attach(built);
+  interiors.attach(built);
   patchSceneMaterials(scene);
   refreshSceneMaterials(scene);
   hud.setScene?.(def.title);
@@ -198,7 +211,7 @@ function travel(portal) {
   }, 450);
 }
 function checkPortals() {
-  if (travelling) return;
+  if (travelling || interiors.inside) return;
   const p = controller.pos;
   for (const portal of current.built.portals || []) {
     if (p.x > portal.minX && p.x < portal.maxX && p.z > portal.minZ && p.z < portal.maxZ && p.y < (portal.maxY ?? Infinity)) {
@@ -225,9 +238,10 @@ function frame() {
   }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   dayNight.update(dt);
+  interiors.update(dt, t);
   retro.render(scene, camera);
   stats.tick();
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; }, get perf() { return stats.last; }, dayNight };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; }, get perf() { return stats.last; }, dayNight, interiors };
   requestAnimationFrame(frame);
 }
 frame();

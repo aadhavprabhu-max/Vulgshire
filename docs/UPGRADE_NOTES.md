@@ -196,3 +196,31 @@ So most of the visible flicker when walking is **texture shimmer**, which the ve
   - `renderer.shadowMap.autoUpdate` is off. Shadows refresh at most every 0.1 s or when the sun moves noticeably, and are switched off while no body is up.
   - At the bridge: night 931 calls, noon 718 (fires off).
 - **Screenshots:** `053`–`057` (night, dawn, noon, dusk, and the cloister at noon).
+
+## Phase 5: enterable buildings (done)
+- **The system** (`src/world/interiors.js`):
+  - Every house records its front door (`BuildingSet.doors`). Detailed chunks expose the doors near the player (`chunks.doorsNear`, `built.doorsNear`), so only nearby houses can be entered.
+  - **Entering:** walk into a door, moving towards it. After a short fade, that building's interior is built in its own footprint, seeded by the lot so it's the same room every time.
+  - **While inside:** the city root is hidden (not drawn). The controller swaps to the room's colliders, walkable area and camera blockers.
+  - **Leaving:** walk back out through the door. After a fade the room is disposed and the city comes back, with the player outside the door facing the street.
+  - Only one interior ever exists at a time.
+- **Room kit:**
+  - Shell: floor (planks or flagstones), walls (plaster or timber framing, tinted), a beamed ceiling, skirting, a door with a frame, and windows that show the time of day (dark blue at night, bright by day).
+  - Kinds by use: **house** (bed with blanket and pillow, chest, hearth, table with stools and a candle, rug, shelf), **shop** (counter, shelves of goods, crates, barrels, lamp), **tavern** (bar with mugs, barrels, hearth, tables with candles, lamp), **chapel** (altar with candles, pews).
+  - Kit houses carry a use (house, shop or tavern). Other archetypes map by type and size.
+- **Lighting:** it follows the clock. The hemisphere goes from warm and dim at night to daylight by day, the sun and moon are switched off inside, hearth fires burn all day, and lamps are mostly lit at night. Flames flicker.
+- **Proven on 3 first, then all:**
+  - A house, a shop and a tavern near the market: entered, photographed, and walked out of. Inside: about 1.6–2.3k triangles and 12–16 draw calls (the city isn't drawn).
+  - Then all 184 doors in the detailed chunks around the market: every interior builds (0 failures, about 0.8 ms each in the software renderer), and every spawn point is clear of furniture.
+  - Also checked: walking into a door from the street at noon.
+- **Not added (per the brief, ask first):** meaningful contents such as NPCs, loot or upper floors.
+
+## Final before/after (same harness, North Shore at 22:00, streaming settled)
+| Pose | Draw calls | Triangles |
+|---|---|---|
+| Bridge spawn | 929 → **753** | 336k → **322k** |
+| Market | 555 → **334** | 351k → **328k** |
+| Cathedral square | 257 → **260** | 285k → **278k** |
+| West street | 463 → **265** | 295k → **270k** |
+
+FPS can only be read on real hardware: press **P**. The cloud browser is a software renderer.

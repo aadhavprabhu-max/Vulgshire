@@ -14,7 +14,7 @@ export function createChunkedTown({ lots, root, cell = 100, near = 150, far = 52
     const key = `${Math.floor(lot.x / cell)},${Math.floor(lot.z / cell)}`;
     if (!cells.has(key)) {
       const [cx, cz] = key.split(',').map(Number);
-      cells.set(key, { lots: [], cx: (cx + 0.5) * cell, cz: (cz + 0.5) * cell, low: null, high: null, highBlockers: [] });
+      cells.set(key, { lots: [], cx: (cx + 0.5) * cell, cz: (cz + 0.5) * cell, low: null, high: null, highBlockers: [], doors: [] });
     }
     cells.get(key).lots.push(lot);
   }
@@ -37,6 +37,7 @@ export function createChunkedTown({ lots, root, cell = 100, near = 150, far = 52
     const b = set.build();
     c.high = b.group;
     c.highBlockers = b.blockers;
+    c.doors = b.doors || [];
     group.add(c.high);
   }
   function dropHigh(c) {
@@ -45,6 +46,7 @@ export function createChunkedTown({ lots, root, cell = 100, near = 150, far = 52
     c.high.traverse((o) => o.geometry?.dispose());
     c.high = null;
     c.highBlockers = [];
+    c.doors = [];
   }
 
   function update(px, pz, { force = false } = {}) {
@@ -65,5 +67,15 @@ export function createChunkedTown({ lots, root, cell = 100, near = 150, far = 52
     for (const c of list) if (c.high && c.high.visible) blockers.push(...c.highBlockers);
   }
 
-  return { group, update, cells: list, blockers };
+  /** Front doors of the detailed (nearby) houses within r metres: these can be entered. */
+  function doorsNear(px, pz, r = 30) {
+    const out = [];
+    for (const c of list) {
+      if (!c.high || !c.high.visible || Math.hypot(c.cx - px, c.cz - pz) > r + cell) continue;
+      for (const d of c.doors) if (Math.hypot(d.x - px, d.z - pz) < r) out.push(d);
+    }
+    return out;
+  }
+
+  return { group, update, cells: list, blockers, doorsNear };
 }
