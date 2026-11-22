@@ -495,6 +495,7 @@ function buildMetro() {
   tunnel(STATION_X[STATION_X.length - 1] + HALL, STATION_X[STATION_X.length - 1] + HALL + 30);
   root.add(mergedMesh(tun, M.darkD), mergedMesh(tunVault, M.darkD));
 
+  let crossingCastle = null;
   // ---- The river crossing: out of the tunnel, over the north river, back under ----
   // Line space: tunnel-mouth cliffs and the viaduct. World space: the water, the
   // city on the banks (from the map) and the Crownkeep, all where they really are.
@@ -584,6 +585,7 @@ function buildMetro() {
     world.add(hill);
     const keep = new THREE.Group();
     const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, CK.top);
+    crossingCastle = castle;
     castle.group.position.set(0, -CK.top, 0);
     keep.add(castle.group);
     keep.position.set(CK.x, CK.top, CK.z);
@@ -654,7 +656,13 @@ function buildMetro() {
   };
 
   let hint = 0;
+  let outK = 0; // how much the camera is out under the sky (day/night applies there)
   return {
+    outdoor: () => outK,
+    // The Crownkeep's fires burn only at night (judged by the clock, not by where you stand).
+    setTime({ glowK }) {
+      crossingCastle?.setNight(glowK);
+    },
     root: world,
     ground: -100, // underground: no implicit floor at street level
     sky: buildSky({ moonDir: new THREE.Vector3(0.5, 0.35, -0.8).normalize(), moonSize: 30, horizon: 0x0a0a12 }),
@@ -698,6 +706,7 @@ function buildMetro() {
         const cx = Math.abs(q.d) < 60 ? q.s : -999;
         const out = cx > OPEN[0] && cx < OPEN[1] ? 1 : cx > OPEN[0] - 40 && cx < OPEN[1] + 40 ? 0.4 : 0;
         ctx.scene.fog.density = 0.024 - 0.019 * out;
+        outK += (out - outK) * Math.min(1, dt * 2);
       }
       for (const a of animated) a.update(dt, t);
       const c = ctx?.controller;

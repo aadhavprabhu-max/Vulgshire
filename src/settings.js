@@ -14,6 +14,10 @@ export const settings = {
   dither: true, // ordered dither + 5-bit-per-channel colour depth
   grade: true, // gentle cold colour grade
   shot: false, // screenshot mode: no HUD, fixed pose
+  // Day/night cycle: a full day lasts this many real minutes; the clock starts
+  // at startHour (22 = the moody night of the references). ?time=13.5&daylen=14
+  dayLengthMinutes: 14,
+  startHour: 22,
 };
 
 export function loadSettingsFromURL() {
@@ -24,4 +28,6 @@ export function loadSettingsFromURL() {
     const v = flag(k);
     if (v !== undefined) settings[k] = v;
   }
+  if (q.has('time')) settings.startHour = ((+q.get('time') % 24) + 24) % 24;
+  if (q.has('daylen')) settings.dayLengthMinutes = Math.max(0.1, +q.get('daylen'));
 }

@@ -99,6 +99,7 @@ function buildZone() {
   const cameraBlockers = [];
   const animated = [];
   const torches = [];
+  const torchSmoke = []; // smoke from the bridge torches (only while they burn)
 
   // ---- Terrain from the map: land, lake, rivers, quays -----------------------
   const T = createMapTerrain(ZONE.originPx);
@@ -220,6 +221,7 @@ function buildZone() {
         const smoke = smokeColumn({ x: tx, y: 3.4, z: sz * (HALF + 0.3), height: 16, puffs: 16, size: 1.3 });
         root.add(smoke.group);
         animated.push(smoke);
+        torchSmoke.push(smoke.group);
       }
     }
   });
@@ -675,8 +677,14 @@ function buildZone() {
     },
     lanternIntensity: 3,
     debug: { viaduct, town, skyline, castle },
+    // Day/night: the keep's fires only burn at night; torch smoke goes with the torches.
+    setTime({ glow }) {
+      castle.setNight(glow);
+      for (const s of torchSmoke) s.visible = glow > 0.1;
+    },
     env: {
       fog: { color: 0x170d20, density: 0.0052 },
+      skyGlow: 0x3a2656, // purple horizon at night, like the reference
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
       dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 45, target: new THREE.Vector3(-10, 0, 0) },
     },

@@ -9,6 +9,7 @@ import { createHud } from './ui/hud.js';
 import { validateWorld, LOCATIONS } from './data/world.js';
 import { createMetroMap } from './ui/metromap.js';
 import { createStats } from './ui/stats.js';
+import { createDayNight } from './world/daynight.js';
 
 validateWorld();
 loadSettingsFromURL();
@@ -28,6 +29,9 @@ dirLight.shadow.mapSize.set(1024, 1024);
 dirLight.shadow.bias = -0.0008;
 dirLight.shadow.normalBias = 0.03;
 scene.add(hemi, dirLight, dirLight.target);
+
+const dayNight = createDayNight({ scene, hemi, dirLight, fog, renderer: retro.renderer, settings, camera });
+if (new URLSearchParams(location.search).get('timepause') === '1') dayNight.clock.paused = true;
 
 const monk = createMonk();
 scene.add(monk.root);
@@ -88,6 +92,7 @@ function loadScene(index, entry = null) {
   monk.state.baseIntensity = built.lanternIntensity ?? 4;
 
   built.onEnter?.(entry);
+  dayNight.attach(built);
   patchSceneMaterials(scene);
   refreshSceneMaterials(scene);
   hud.setScene?.(def.title);
@@ -152,6 +157,15 @@ window.addEventListener('keydown', (e) => {
     case 'KeyP':
       stats.toggle();
       break;
+    case 'KeyT':
+      dayNight.clock.paused = !dayNight.clock.paused;
+      hud.toast(`Time ${dayNight.label()} ${dayNight.clock.paused ? '(paused)' : ''}`);
+      break;
+    case 'Comma':
+    case 'Period':
+      dayNight.scrub(e.code === 'Period' ? 0.5 : -0.5);
+      hud.toast(`Time ${dayNight.label()}`);
+      break;
   }
 });
 
@@ -210,9 +224,10 @@ function frame() {
     camera.lookAt(debugCam[3], 0, debugCam[4]);
   }
   if (current.built.sky) current.built.sky.position.set(camera.position.x, camera.position.y, camera.position.z);
+  dayNight.update(dt);
   retro.render(scene, camera);
   stats.tick();
-  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; }, get perf() { return stats.last; } };
+  if (++frames === 10) window.__vulgshire = { ready: true, controller, settings, scene, get built() { return current.built; }, get info() { return retro.stats; }, get perf() { return stats.last; }, dayNight };
   requestAnimationFrame(frame);
 }
 frame();

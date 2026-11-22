@@ -170,3 +170,29 @@ So most of the visible flicker when walking is **texture shimmer**, which the ve
 - **Torch-lined approach:** post torches on both sides of the castle road from the bridge to the gate.
 - **Cost:** draw calls at the bridge are 925 (baseline 924), and there are fewer triangles than the baseline.
 - **Still off:** the night sky is darker than the reference's purple sky, so the spires are best seen against the new sky (Phase 4). `052-keep-silhouette-test-purple-sky.png` shows the shapes against a purple background.
+
+## Phase 4: day/night (done)
+- `src/world/daynight.js`, driven from `main.js`:
+  - **Clock:** `settings.dayLengthMinutes = 14` and `settings.startHour = 22` (URL `?time=13.5&daylen=14`, `?timepause=1`).
+  - **Keys:** **T** pauses and resumes, **,** / **.** go back or forward half an hour (with a toast showing the time).
+- **Sun and moon:**
+  - The sun rises in the east at 6:00, crosses the south and sets at 18:00.
+  - The moon starts where each scene composed it (at 22:00) and moves 15° an hour.
+  - The directional light follows whichever body is brighter.
+- **Sky:**
+  - A shader sphere: the scene's starry night texture, plus a purple horizon band at night (North Shore `env.skyGlow`, like the reference), blended into a day gradient.
+  - A warm dawn or dusk glow around the low sun, and a sun disc and halo.
+  - Stars fade by day.
+- **Lighting:**
+  - Each scene's own `env` is the night keyframe. Fog colour, hemisphere colours and intensity, and the sun's colour and intensity are blended towards dawn, noon and dusk keyframes.
+  - Scenes without a sky (the cathedral, the Crownkeep interior) keep their own lighting.
+  - The metro blends in by how far you are out under the sky (`outdoor()`), so tunnels stay as they were.
+- **Emissives:**
+  - Lit windows (every material using the lit-window texture, plus anything tagged `userData.glow`) fade to dark glass by day.
+  - Torch flames hide, and point lights scale down, from dusk to dawn. Flickering lights are handled by remembering each frame's fresh value.
+  - Indoors they stay lit.
+  - `scene.setTime()` hooks: the Crownkeep's roof fires, smoke and embers burn only at night (North Shore and metro). The bridge torch smoke goes out with the torches.
+- **Performance:** everything is uniform and colour blending except shadows.
+  - `renderer.shadowMap.autoUpdate` is off. Shadows refresh at most every 0.1 s or when the sun moves noticeably, and are switched off while no body is up.
+  - At the bridge: night 931 calls, noon 718 (fires off).
+- **Screenshots:** `053`–`057` (night, dawn, noon, dusk, and the cloister at noon).

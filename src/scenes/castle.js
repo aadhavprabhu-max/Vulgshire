@@ -224,6 +224,7 @@ export function buildCastle(M, cz, top) {
   ].map(([x, y, z]) => {
     const l = new THREE.PointLight(0xff7a2a, 260, 170, 1.3);
     l.position.set(x, y, z);
+    l.userData.dnSkip = true; // setNight dims these
     group.add(l);
     return l;
   });

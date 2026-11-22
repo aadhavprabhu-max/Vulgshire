@@ -4,6 +4,7 @@ export function createHud(el, hidden = false) {
     <div class="title">VULGSHIRE · <span class="scene"></span></div>
     <div>Click (or drag) to look · <b>WASD</b> move · <b>Shift</b> run · <b>Q/E</b> turn · <b>V</b> first / third person · <b>M</b> map</div>
     <div><b>1</b> resolution · <b>2</b> vertex jitter · <b>3</b> fog · <b>4</b> dither · <b>5</b> colour grade · <b>H</b> hide · <b>P</b> stats</div>
+    <div><b>T</b> pause time · <b>,</b> / <b>.</b> earlier / later</div>
     <div><b>[</b> / <b>]</b> previous / next scene</div>
     <div class="toast"></div>`;
   const toastEl = el.querySelector('.toast');

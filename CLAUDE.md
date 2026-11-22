@@ -27,7 +27,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - `npm install` once, then `npm run dev` and open the printed URL. `npm test` runs the headless train tests.
 - Controls: click to lock the mouse and look around, **WASD** or arrow keys to move, **Shift** to run, **Q/E** to turn, **V** for first or third person.
 - Scenes: **[** and **]** switch between the five scenes, or open one directly with `?scene=cloister|rooftop|bridge|crownkeep|cathedral` (or `#crownkeep` etc.). Walking through the castle gate (and back out the door) changes zone automatically, with a fade.
-- Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD. These are number keys because browsers reserve most F-keys.
+- Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD, **P** stats. Time: **T** pause, **,** / **.** earlier or later. These are number keys because browsers reserve most F-keys.
 - URL flags: `?res=0|1|2&jitter=1&fog=0&dither=0&grade=0`, `&shot=1` (hides the HUD), `&pose=x,z,yaw,pitch` (debug camera pose), `&view=first`.
 - Progress screenshots: `node tools/screenshot.mjs screenshots/progress/NNN-name.png ["query"]` renders headless at 640x360. It needs Playwright; in the cloud container it uses the preinstalled global copy.
 
@@ -59,9 +59,15 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - `src/data/world.js`: world names, map positions and the three-rivers rule check (`validateWorld`).
 - `src/ui/hud.js`: the small iron-framed HUD.
 
-## Sky
+## Sky and the day/night cycle
 
-- There is no sky dome. Outdoor scenes use a seamless equirectangular night sky as `scene.background` (`tex.nightSky(horizon)`, 2048 px so stars stay crisp), plus moon and halo sprites (`buildSky({ moonDir, moonSize, horizon })`). `horizon` matches the scene's fog colour.
+- Outdoor scenes give `buildSky({ moonDir, moonSize, horizon })`: a seamless equirectangular night sky (`tex.nightSky(horizon)`, 2048 px so stars stay crisp) plus moon and halo sprites. `horizon` matches the scene's fog colour.
+- **Day/night** (`src/world/daynight.js`): a 14-minute day (`settings.dayLengthMinutes`, starting at `settings.startHour` = 22; URL `?time=13.5&daylen=14&timepause=1`; keys **T** pause, **,** / **.** scrub).
+  - A camera-following shader sky (no visible dome) blends that night texture into dawn, day and dusk, with a sun disc. `env.skyGlow` adds a purple horizon band at night.
+  - The scene's `env` is the night keyframe; fog, hemisphere and sun blend towards day.
+  - Lit windows dim to dark glass by day, and torch flames and point lights go out from dawn to dusk.
+  - Scenes can add `setTime(state)` (the Crownkeep's fires burn only at night) and `outdoor` (0..1 or a function; scenes without a sky are interiors and keep their own lighting).
+  - Shadows refresh at most every 0.1 s (`shadowMap.autoUpdate = false`).
 
 ## Rendering notes (Milestone 1)
 
