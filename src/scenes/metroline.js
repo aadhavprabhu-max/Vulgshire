@@ -15,6 +15,32 @@ const ZONE = LOCATIONS.zones.find((z) => z.id === 'north-river-crossing');
 const toZone = ([px, py]) => [(px - ZONE.originPx[0]) * K, (py - ZONE.originPx[1]) * K];
 export const toMapPx = (x, z) => [x / K + ZONE.originPx[0], z / K + ZONE.originPx[1]];
 
+// The line's height (rail level, in North Shore heights: streets 0, water -4).
+// Underground at -10; eased ramps up to the river viaduct at street level.
+// Keys are [line metre, rail y]; between keys the grade eases in and out.
+export const PROFILE = {
+  keys: [
+    [40, -10],
+    [160, 0],
+    [214, 0],
+    [300, -10],
+  ],
+  bridge: [160, 214], // the viaduct (river at 166..210)
+  open: [90, 267], // tunnel mouths: open-air cutting + bridge between them
+};
+export function railY(s) {
+  const k = PROFILE.keys;
+  if (s <= k[0][0]) return k[0][1];
+  for (let i = 1; i < k.length; i++) {
+    if (s <= k[i][0]) {
+      const t = (s - k[i - 1][0]) / (k[i][0] - k[i - 1][0]);
+      return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * (1 - Math.cos(Math.PI * t)) / 2;
+    }
+  }
+  return k[k.length - 1][1];
+}
+export const gradeAt = (s) => (railY(s + 0.5) - railY(s - 0.5)) / 1;
+
 export function createMetroLine(lineId = 'II', { extend = 70 } = {}) {
   const line = METRO.lines.find((l) => l.id === lineId);
   const raw = line.path.map(toZone);
@@ -196,7 +222,7 @@ export function bendGroup(line, lineRoot, { maxLen = 4 } = {}) {
     for (let i = 0; i < p.count; i++) {
       const f = line.frame(p.getX(i));
       const d = p.getZ(i);
-      p.setXYZ(i, f.x + f.nx * d, p.getY(i), f.z + f.nz * d);
+      p.setXYZ(i, f.x + f.nx * d, p.getY(i) + railY(p.getX(i)), f.z + f.nz * d);
       if (n) {
         const nx = n.getX(i);
         const nz = n.getZ(i);
@@ -215,7 +241,7 @@ export function bendGroup(line, lineRoot, { maxLen = 4 } = {}) {
     o.getWorldPosition(v);
     const [x, z] = line.toWorld(v.x, v.z);
     o.parent.remove(o);
-    o.position.set(x, v.y, z);
+    o.position.set(x, v.y + railY(v.x), z);
     out.add(o);
   }
   return { group: out, blockers };
@@ -238,7 +264,10 @@ export function bendBox(line, b, maxLen = 3) {
     void maxX;
     void minZ;
     void maxZ;
-    parts.push({ ...rest, cx, cz, hx: (s1 - s0) / 2 + 0.05, hz: (b.maxZ - b.minZ) / 2, rot: f.rot, s0, s1 });
+    const dy = railY(sc);
+    const lift = {};
+    for (const k of ['y', 'y0', 'y1', 'h']) if (rest[k] !== undefined) lift[k] = rest[k] + dy;
+    parts.push({ ...rest, ...lift, cx, cz, hx: (s1 - s0) / 2 + 0.05, hz: (b.maxZ - b.minZ) / 2, rot: f.rot, s0, s1, dy });
   }
   return parts;
 }
@@ -253,5 +282,7 @@ export function bendAABB(line, b) {
   ].map(([s, d]) => line.toWorld(s, d));
   const xs = pts.map((p) => p[0]);
   const zs = pts.map((p) => p[1]);
-  return { ...b, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+  const out = { ...b, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+  if (b.maxY !== undefined) out.maxY = b.maxY + railY((b.minX + b.maxX) / 2);
+  return out;
 }

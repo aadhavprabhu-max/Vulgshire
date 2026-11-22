@@ -139,5 +139,41 @@ export function createMapTerrain(originPx) {
     return { ground: geo(gPos, gUv), quays: geo(qPos, qUv), parapets };
   }
 
-  return { toPx, toZone, isWater, inRegion, waterNear, buildGround, W, H };
+  /** Water surface only where the map has water (row runs), minus `skip` areas. */
+  function buildWater({ px0, px1, py0, py1, y, skip = () => false }) {
+    const pos = [];
+    const uv = [];
+    const ok = (px, py) => px >= 0 && py >= 0 && px < W && py < H && WATER[py * W + px] && !skip(...toZone(px + 0.5, py + 0.5));
+    for (let py = py0; py < py1; py++) {
+      let px = px0;
+      while (px < px1) {
+        if (!ok(px, py)) {
+          px++;
+          continue;
+        }
+        const s = px;
+        while (px < px1 && ok(px, py)) px++;
+        const [x0, z0] = toZone(s, py);
+        const [x1, z1] = toZone(px, py + 1);
+        for (const [x, z] of [
+          [x0, z0],
+          [x0, z1],
+          [x1, z1],
+          [x0, z0],
+          [x1, z1],
+          [x1, z0],
+        ]) {
+          pos.push(x, y, z);
+          uv.push(x / 8, z / 8);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  return { toPx, toZone, isWater, inRegion, waterNear, buildGround, buildWater, W, H };
 }
