@@ -46,7 +46,7 @@ export function createMapTerrain(originPx) {
    * Ground (land only, merged row runs), quay walls along every shore, low
    * parapets on walkable shores, all inside the map pixel box [px0..px1)x[py0..py1).
    */
-  function buildGround({ px0, px1, py0, py1, waterY, skip = () => false, parapetWhere = () => false, waterAt = null, noQuay = null }) {
+  function buildGround({ px0, px1, py0, py1, waterY, skip = () => false, parapetWhere = () => false, waterAt = null, noQuay = null, noGround = null, maxRun = 64 }) {
     const gPos = [];
     const gUv = [];
     const qPos = [];
@@ -79,13 +79,17 @@ export function createMapTerrain(originPx) {
     for (let py = py0; py < py1; py++) {
       // Ground: runs of land pixels in this row.
       let px = px0;
+      // Runs are capped at maxRun pixels: no kilometre-long sliver triangles
+      // (they snap and interpolate badly). noGround cuts holes (e.g. under a
+      // bridge deck) without adding quay walls.
+      const solid = (x) => land(x, py) && !(noGround && noGround(...toZone(x + 0.5, py + 0.5)));
       while (px < px1) {
-        if (!land(px, py)) {
+        if (!solid(px)) {
           px++;
           continue;
         }
         const s = px;
-        while (px < px1 && land(px, py)) px++;
+        while (px < px1 && solid(px) && px - s < maxRun) px++;
         const [x0, z0] = toZone(s, py);
         const [x1, z1] = toZone(px, py + 1);
         quad(gPos, gUv, [x0, 0, z0], [x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0 / 2, z0 / 2], [x0 / 2, z1 / 2], [x1 / 2, z1 / 2], [x1 / 2, z0 / 2]);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos } from './kit.js';
+import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos, floorMat, LAYER } from './kit.js';
 import { street, lotsAlongStreets, streetGeometry, scatterLots } from './town.js';
 import { createMapTerrain } from './mapterrain.js';
 import { createChunkedTown } from './chunks.js';
@@ -11,7 +11,7 @@ import { createTrain } from './train.js';
 import { createMetroLine, bendGroup, bendBox, railY, PROFILE } from './metroline.js';
 import METRO from '../data/metro.json';
 import { smokeColumn, embers } from './fx.js';
-import { buildCastle } from './castle.js';
+import { buildCastle, CROWNKEEP, CROWNKEEP_PRECINCT } from './castle.js';
 import { createGuard } from '../characters/guard.js';
 import { createPerson, PALETTES } from '../characters/people.js';
 import { createCrowd, faceToward } from '../characters/crowd.js';
@@ -31,7 +31,8 @@ const K = LOCATIONS.metresPerPixel * LOCATIONS.gameScale; // 1.4 m per map px
 const px = ([x, y]) => [(x - ZONE.originPx[0]) * K, (y - ZONE.originPx[1]) * K];
 
 const WATER_Y = -4; // lake and river surface
-const CASTLE = { x: 205, z: 0, top: 12, r: 55, slope: 34 }; // Crownkeep hill (map px ~812,167)
+const BX_ROAD = 27; // where the castle road leaves the bridge
+const CASTLE = CROWNKEEP; // Crownkeep hill (map px ~812,167), shared with the metro scene
 const STORM_DIR = new THREE.Vector3(0.95, 0.5, -0.2).normalize(); // dim backlight from behind the keep
 
 function mats() {
@@ -39,7 +40,8 @@ function mats() {
     stone: lambert(tex.stoneWall()),
     castle: lambert(tex.castleStone()),
     cobble: lambert(tex.cobble()),
-    paving: lambert(tex.flagstone(), { color: 0xc8c0b8 }),
+    ground: floorMat(tex.cobble()),
+    paving: floorMat(tex.flagstone(), { color: 0xc8c0b8 }, 1),
     slate: lambert(tex.slate()),
     rock: lambert(tex.darkStone(), { color: 0x6a6070 }),
     wood: lambert(tex.wood()),
@@ -97,12 +99,13 @@ function buildZone() {
   const cameraBlockers = [];
   const animated = [];
   const torches = [];
+  const torchSmoke = []; // smoke from the bridge torches (only while they burn)
 
   // ---- Terrain from the map: land, lake, rivers, quays -----------------------
   const T = createMapTerrain(ZONE.originPx);
   const BRIDGE_BOX = { x0: -31, x1: 31, z0: -4.2, z1: 4.2 };
   const inBridge = (x, z) => x > BRIDGE_BOX.x0 && x < BRIDGE_BOX.x1 && z > BRIDGE_BOX.z0 && z < BRIDGE_BOX.z1;
-  const inPrecinct = (x, z) => Math.hypot(x - CASTLE.x, z - CASTLE.z) < CASTLE.r + CASTLE.slope + 3;
+  const inPrecinct = (x, z) => Math.hypot(x - CASTLE.x, z - CASTLE.z) < CROWNKEEP_PRECINCT;
   const land = (x, z) => !T.isWater(x, z);
   // The Pilgrim's Way runs in the open here: a slot (cutting + viaduct) in the ground.
   const ROUTE = createMetroLine('II');
@@ -128,7 +131,9 @@ function buildZone() {
     const q = ROUTE.toLine(x, z);
     return q.s > OPEN[0] - 25 - r && q.s < OPEN[1] + 25 + r && Math.abs(q.d) < 5.5 + r;
   };
-  const walkable = (x, z) => inBridge(x, z) || (T.inRegion(x, z) && land(x, z) && !inPrecinct(x, z) && !slot(x, z));
+  // The castle road runs through the gate (x 100) and up to the gate portal, inside the precinct.
+  const inGateRoad = (x, z) => x > 80 && x < 113 && Math.abs(z) < 3.2;
+  const walkable = (x, z) => inBridge(x, z) || inGateRoad(x, z) || (T.inRegion(x, z) && land(x, z) && !inPrecinct(x, z) && !slot(x, z));
   // Water only where the map has water (so the slot never floods).
   const water = new THREE.Mesh(T.buildWater({ px0: 300, px1: 1470, py0: 0, py1: 760, y: WATER_Y, skip: slot }), M.water);
   root.add(water);
@@ -142,8 +147,9 @@ function buildZone() {
       skip: (x, z) => Math.abs(z) < 6.5 && Math.abs(x) < 33,
       parapetWhere: (x, z) => T.inRegion(x, z),
       waterAt: slot,
+      noGround: (x, z) => Math.abs(x) < 27 && Math.abs(z) < 3.5, // the bridge deck has its own surface
     });
-    const ground = new THREE.Mesh(terr.ground, M.cobble);
+    const ground = new THREE.Mesh(terr.ground, M.ground);
     ground.receiveShadow = true;
     root.add(ground);
     root.add(new THREE.Mesh(terr.quays, M.stone));
@@ -169,7 +175,7 @@ function buildZone() {
   // ---- The bridge (map px ~643..687 at y 167) -------------------------------
   const BX = 27; // half length incl. abutments
   const HALF = 3.5;
-  root.add(box(2 * BX, 1.2, 2 * HALF, M.cobble, 0, -0.6, 0));
+  root.add(box(2 * BX, 1.2, 2 * HALF, M.ground, 0, -0.58, 0)); // deck top at +2 cm, ground cut out beneath
   {
     const s = new THREE.Shape();
     s.moveTo(-BX, -9);
@@ -215,6 +221,7 @@ function buildZone() {
         const smoke = smokeColumn({ x: tx, y: 3.4, z: sz * (HALF + 0.3), height: 16, puffs: 16, size: 1.3 });
         root.add(smoke.group);
         animated.push(smoke);
+        torchSmoke.push(smoke.group);
       }
     }
   });
@@ -363,7 +370,7 @@ function buildZone() {
       k.add(new THREE.Mesh(rf, SM.roof));
       const hole = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 3.4), SM.dark);
       hole.rotation.x = -Math.PI / 2;
-      hole.position.set(0, 0.03, 0);
+      hole.position.set(0, 0.12, 0); // above every paving layer
       k.add(hole);
       const glow = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), SM.glow);
       glow.position.set(0, 0.6, -1.95);
@@ -445,12 +452,16 @@ function buildZone() {
     const svc = createService({ stops: [OPEN[0] - 70, OPEN[1] + 70], dwell: 6 });
     return { train, svc };
   })();
-  const paving = streets.map((s) => streetGeometry(s, 0.015));
+  // Paving: streets and squares on their own layers, all with world-space UVs so
+  // overlaps (street crossings, squares) look identical wherever they meet.
+  const paving = streets.map((s) => streetGeometry(s, LAYER.street));
   for (const q of squares) {
     const g = new THREE.CircleGeometry(q.r, 16);
     g.rotateX(-Math.PI / 2);
-    g.translate(q.x, 0.016, q.z);
-    paving.push(scaleUV(g, q.r));
+    g.translate(q.x, LAYER.square, q.z);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) g.attributes.uv.setXY(i, p.getX(i) / 2, p.getZ(i) / 2);
+    paving.push(g);
   }
   root.add(mergedMesh(paving, M.paving));
 
@@ -475,6 +486,9 @@ function buildZone() {
     slotNear(x, z, r) ||
     (x > 92 - r && x < 106 + r && Math.abs(z) < 92);
   const lots = lotsAlongStreets({ seed: 5, streets, blocked, infillBounds: [-330, 915, -140, 425], infillCount: 4200 });
+  // District palettes for the house kit: richer colours in the Merchants'
+  // Quarter, more stone near the Crownkeep.
+  for (const l of lots) l.district = Math.hypot(l.x - ghX, l.z - ghZ) < 170 ? 'merchant' : l.x > 60 && l.x < 190 && l.z < 40 ? 'castle' : 'default';
   for (const l of lots) colliders.push({ cx: l.x, cz: l.z, hx: l.w / 2 + 0.35, hz: l.d / 2 + 0.35, rot: l.rot });
   const town = createChunkedTown({ lots, root, near: 150, far: 520, litChance: 0.38 });
 
@@ -516,6 +530,16 @@ function buildZone() {
 
   // ---- East bank: castle road, gatehouse, the Crownkeep on its hill ------------
   const GX = 100;
+  // A torch-lined approach: post torches on both sides of the castle road.
+  for (let i = 0, x = 34; x <= 92; x += 9.5, i++) {
+    const zc = x < 60 ? (-2 * (x - BX_ROAD)) / (60 - BX_ROAD) : -2 + (2 * (x - 60)) / 40; // the road's centre line
+    for (const sz of [-1, 1]) {
+      const t = postTorch(x, zc + sz * 5.3, M, i % 3 === 1 && sz === (i % 2 ? 1 : -1));
+      root.add(t.group, ...t.extra);
+      torches.push(t);
+      colliders.push({ minX: x - 0.2, maxX: x + 0.2, minZ: zc + sz * 5.3 - 0.2, maxZ: zc + sz * 5.3 + 0.2, h: 3 });
+    }
+  }
   const gate = gateBlock(16, 15, 8, 5, 4.2, M.castle);
   gate.rotation.y = Math.PI / 2;
   gate.position.x = GX;
@@ -585,13 +609,14 @@ function buildZone() {
   const keep = new THREE.Group();
   keep.position.set(CASTLE.x, CASTLE.top, CASTLE.z);
   keep.rotation.y = -Math.PI / 2; // facade faces west, toward the bridge
-  keep.scale.setScalar(1.45);
+  keep.scale.setScalar(CASTLE.scale);
   castle.group.position.set(0, -CASTLE.top, 0);
   keep.add(castle.group);
   root.add(keep);
   animated.push(...castle.animated);
   const em = embers({ count: 160, area: [0, CASTLE.top + 14, 10, 70, 18, 30], rise: 30, size: 2 });
   castle.group.add(em.group);
+  castle.nightObjects.push(em.group); // embers only drift at night
   animated.push(em);
 
   // ---- Guards patrolling between the west tower and the gatehouse --------------
@@ -651,9 +676,17 @@ function buildZone() {
       return T.toPx(p.x, p.z);
     },
     lanternIntensity: 3,
-    debug: { viaduct },
+    debug: { viaduct, town, skyline, castle },
+    // Enterable buildings: the front doors of the detailed houses near the player.
+    doorsNear: (x, z, r) => town.doorsNear(x, z, r),
+    // Day/night: the keep's fires only burn at night; torch smoke goes with the torches.
+    setTime({ glow }) {
+      castle.setNight(glow);
+      for (const s of torchSmoke) s.visible = glow > 0.1;
+    },
     env: {
       fog: { color: 0x170d20, density: 0.0052 },
+      skyGlow: 0x3a2656, // purple horizon at night, like the reference
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },
       dir: { dir: STORM_DIR, color: 0x9a7ad8, intensity: 1.0, shadow: true, extent: 45, target: new THREE.Vector3(-10, 0, 0) },
     },

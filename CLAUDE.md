@@ -27,7 +27,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - `npm install` once, then `npm run dev` and open the printed URL. `npm test` runs the headless train tests.
 - Controls: click to lock the mouse and look around, **WASD** or arrow keys to move, **Shift** to run, **Q/E** to turn, **V** for first or third person.
 - Scenes: **[** and **]** switch between the five scenes, or open one directly with `?scene=cloister|rooftop|bridge|crownkeep|cathedral` (or `#crownkeep` etc.). Walking through the castle gate (and back out the door) changes zone automatically, with a fade.
-- Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD. These are number keys because browsers reserve most F-keys.
+- Retro toggles: **1** cycles resolution (640x360, 854x480, native), **2** vertex jitter, **3** fog, **4** dither, **5** colour grade, **H** hides the HUD, **P** stats. Time: **T** pause, **,** / **.** earlier or later. These are number keys because browsers reserve most F-keys.
 - URL flags: `?res=0|1|2&jitter=1&fog=0&dither=0&grade=0`, `&shot=1` (hides the HUD), `&pose=x,z,yaw,pitch` (debug camera pose), `&view=first`.
 - Progress screenshots: `node tools/screenshot.mjs screenshots/progress/NNN-name.png ["query"]` renders headless at 640x360. It needs Playwright; in the cloud container it uses the preinstalled global copy.
 
@@ -59,17 +59,25 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - `src/data/world.js`: world names, map positions and the three-rivers rule check (`validateWorld`).
 - `src/ui/hud.js`: the small iron-framed HUD.
 
-## Sky
+## Sky and the day/night cycle
 
-- There is no sky dome. Outdoor scenes use a seamless equirectangular night sky as `scene.background` (`tex.nightSky(horizon)`, 2048 px so stars stay crisp), plus moon and halo sprites (`buildSky({ moonDir, moonSize, horizon })`). `horizon` matches the scene's fog colour.
+- Outdoor scenes give `buildSky({ moonDir, moonSize, horizon })`: a seamless equirectangular night sky (`tex.nightSky(horizon)`, 2048 px so stars stay crisp) plus moon and halo sprites. `horizon` matches the scene's fog colour.
+- **Day/night** (`src/world/daynight.js`): a 14-minute day (`settings.dayLengthMinutes`, starting at `settings.startHour` = 22; URL `?time=13.5&daylen=14&timepause=1`; keys **T** pause, **,** / **.** scrub).
+  - A camera-following shader sky (no visible dome) blends that night texture into dawn, day and dusk, with a sun disc. `env.skyGlow` adds a purple horizon band at night.
+  - The scene's `env` is the night keyframe; fog, hemisphere and sun blend towards day.
+  - Lit windows dim to dark glass by day, and torch flames and point lights go out from dawn to dusk.
+  - Scenes can add `setTime(state)` (the Crownkeep's fires burn only at night) and `outdoor` (0..1 or a function; scenes without a sky are interiors and keep their own lighting).
+  - Shadows refresh at most every 0.1 s (`shadowMap.autoUpdate = false`).
 
 ## Rendering notes (Milestone 1)
 
 - Lights: a navy hemisphere light, a cold directional moonlight with a hard 1024 px `BasicShadowMap`, and warm point lights for the lantern and wall torches.
 - Surfaces under the walkway roof use darker "baked" materials (`stoneShade`, `floorShade`) because the hemisphere light can't be occluded. This keeps the arches reading as dark openings, like in the reference.
+- **Floors** (`floorMat()` in `kit.js`): mip-mapped floor textures (`floorTex()`: nearest magnification, nearest-picked mips, so floors stay chunky up close but don't sparkle far away), and no vertex snap. Stacked ground surfaces sit on `LAYER` heights (ground 0, streets 0.04, squares 0.07, plazas 0.08) with polygon offsets, so they never z-fight. Walls and everything else keep unfiltered textures with no mipmaps.
+- Camera near/far is 0.2 / 800. Press **P** (or `?stats=1`) for FPS, triangles and draw calls.
 - Glowing flowers are unlit `MeshBasicMaterial` crossed quads (instanced).
 - Glowing things (lit windows, potions, stained glass, flames) use unlit `MeshBasicMaterial`. Real point lights are kept few: the bridge lights only every other post torch.
-- Big skylines (town, castle) are merged into a few meshes. The Crownkeep is built at map scale and then scaled up by 1.45 around the hill top so it dominates the view.
+- Big skylines (town, castle) are merged into a few meshes. The Crownkeep is built at map scale and then scaled up by 1.8 around the hill top so it dominates the view. Its materials use `landmarkMaterial()` (45 % fog) so it reads across the city.
 
 ## Scene placement on the map
 
@@ -86,7 +94,7 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - **River:** traced from the map as a centreline (`RIVER_PX`), half-width 21 m, with quay walls, low parapets and moored boats. It flows south into the lake, and it is the only river in this zone.
 - **Bridge:** 54 m long with six arches, battlements, post torches (two with smoke), the west bridge tower (the camera starts in it, like ref 03), and guards patrolling to the castle gate.
 - **West bank:** the main road SW (toward the Old Town), the west road, a street under the north city wall, north–south streets, alleys, the riverside lane, and a market square with a well. The north city wall has towers.
-- **East bank:** the castle road, riverside lane and side street, and the closed Crownkeep gatehouse. The Crownkeep sits on its hill at x ≈ 205 (scaled ×1.45).
+- **East bank:** the castle road (torch-lined), riverside lane and side street, and the Crownkeep gatehouse. The Crownkeep sits on its hill at x ≈ 205: `CROWNKEEP` in `castle.js` (scale ×1.8, hill top r 66, base r 106), shared by the North Shore and the metro crossing. It's built after `docs/keep_reference.png` (a cluster of gothic towers with needle spires). Its fires, smoke and embers only show at night (`castle.setNight(k)`).
 - **Bounds:** walkable x −155…98, z −78…88, with invisible walls and wooden barricades wherever a street leaves the zone. Skyline-only districts continue beyond.
 - **Colliders:** axis-aligned `{minX,maxX,minZ,maxZ}` or rotated `{cx,cz,hx,hz,rot}`. An optional `h` (height) lets the camera pass over low things like railings; without `h` the camera treats the collider as a full-height wall.
 
@@ -156,7 +164,16 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 - Exits: the west door goes back to the castle gate (`bridge`, entry `gate`). The cathedral's west door and the cloister's west door lead back to the North Shore (entries `cathedral`, `cloister`).
 - Colliders use levels (`y0`/`y1`) so balustrades only block on their floor; floors handle the stairs.
 
+## Enterable buildings (`src/world/interiors.js`)
+
+- Walk into any nearby house's front door to go in. A seeded interior (house, shop, tavern or chapel) is built in the house's footprint, the city is hidden, and physics and the camera switch to the room. Walk out through the door to leave, and the room is disposed.
+- Scenes expose doors with `doorsNear(x, z, r)` (the North Shore uses the detailed town chunks). Room lighting follows the day/night clock.
+
 ## Buildings (`src/scenes/buildings.js`, `town.js`)
+
+- **The modular kit** (archetype `kit`, about 55 % of houses): a seeded body (`box`, `L`, `chamfer`, `jetty`, `tower`) + roof (`gable`, `hip`, `mansard`, `shed`, `stepped`, `cross`, `spire`, `pyramid`) + add-ons (dormers, bays, balconies, chimneys, outside stairs, shop fronts, signs). Tune it with `KIT` (weights, height range, district palettes) and `ARCHETYPE_WEIGHTS`. Lots can force `kitBody` and `kitRoof`.
+- **Atlas:** every opaque building texture is packed into one atlas (`src/retro/atlas.js`, per-vertex `tile` rect + `fract()` tiling), so a chunk of houses is about 5 draw calls. Add new building textures to `texFor` in `materials()`.
+- `BuildingSet.build()` also returns `doors` (world-space front doors with lot and use).
 
 - Archetypes: `gable`, `stepped` (crow-stepped gable), `long` (eaves to the street, dormers), `jetty` (overhanging half-timbered upper floors), `hip` (merchant house), `tower` (tower house), `shop` (awning and display window), `church`. Each also varies in size, pastel plaster colour, roof material and tint, chimneys, doors and lit windows.
 - Detail level `high` (walkable streets) adds: stone sills, lintels and jambs on windows; painted shutters (some closed); flower boxes; stone door surrounds with steps; door lanterns; plinths; corner quoins; string courses; ridge caps; chimney pots; carved brackets under jetties; oriel (bay) windows; wooden balconies; shop signs. Skylines use `low`.

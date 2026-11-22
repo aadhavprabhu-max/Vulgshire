@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { tex } from '../retro/textures.js';
+import { mergedMesh } from './kit.js';
 
 // The Vulgshire metro train (owner's design: reference/metro-train-design.webp),
 // built after the owner's train guide:
@@ -219,7 +220,24 @@ function buildCar(k) {
     }
     ends[sx] = lamps;
   }
-  return { group: car, leaves, ends };
+  // Merge everything that never moves, per material (a car is then a handful of
+  // draw calls). Moving parts stay separate: platform-side door leaves, cab lamps.
+  const moving = new Set(Object.values(ends).flat());
+  for (const l of leaves) if (l.side < 0) moving.add(l.leaf);
+  car.updateMatrixWorld(true);
+  const byMat = new Map();
+  for (const o of [...car.children]) {
+    if (moving.has(o)) continue;
+    o.traverse((mm) => {
+      if (!mm.isMesh) return;
+      if (!byMat.has(mm.material)) byMat.set(mm.material, []);
+      byMat.get(mm.material).push(mm.geometry.clone().applyMatrix4(mm.matrixWorld));
+    });
+    car.remove(o);
+  }
+  for (const [mat, geos] of byMat) car.add(mergedMesh(geos, mat));
+  const live = leaves.filter((l) => l.side < 0);
+  return { group: car, leaves: live, ends };
 }
 
 function buildBogie() {

@@ -30,6 +30,21 @@ function toTexture(canvas, { repeat = true } = {}) {
   return t;
 }
 
+// Floors only: the same chunky texels up close (nearest magnification), but with
+// nearest-picked mip levels far away so cobbles and flagstones stop sparkling
+// ("crawling") when the camera moves. Walls and everything else keep no mipmaps.
+const floorCache = new Map();
+export function floorTex(t) {
+  if (!floorCache.has(t.uuid)) {
+    const c = t.clone();
+    c.minFilter = THREE.NearestMipmapNearestFilter;
+    c.generateMipmaps = true;
+    c.needsUpdate = true;
+    floorCache.set(t.uuid, c);
+  }
+  return floorCache.get(t.uuid);
+}
+
 // Per-pixel painter: fn(x, y) -> [r, g, b, a?]
 function paint(w, h, fn) {
   const c = makeCanvas(w, h);

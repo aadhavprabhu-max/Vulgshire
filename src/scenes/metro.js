@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archPoints, archHole, mergedMesh, boxGeo, lancetGeo, flickerTorches, buildSky, mulberry } from './kit.js';
+import { lambert, archPoints, archHole, mergedMesh, boxGeo, lancetGeo, flickerTorches, buildSky, mulberry, floorMat } from './kit.js';
 import { createChunkedTown } from './chunks.js';
 import { scatterLots } from './town.js';
 import { createMapTerrain } from './mapterrain.js';
 import { createMetroLine, bendGroup, bendBox, bendAABB, toMapPx, railY, PROFILE } from './metroline.js';
 import { createService } from './trainservice.js';
 import { LOCATIONS } from '../data/world.js';
-import { buildCastle } from './castle.js';
+import { buildCastle, CROWNKEEP as CK, CROWNKEEP_PRECINCT } from './castle.js';
 import { clockFace } from './landmarks.js';
 import { createTrain, CAR_W, FLOOR, CAR_L, DOORS, DOOR_W, constrainInCar } from './train.js';
 import { createPerson, PALETTES } from '../characters/people.js';
@@ -44,9 +44,9 @@ function mats() {
     dark: lambert(tex.darkStone()),
     darkD: lambert(tex.darkStone(), { color: 0x8a8890, side: THREE.DoubleSide }),
     green: lambert(tex.darkStone(), { color: 0x6a8a74, side: THREE.DoubleSide }),
-    floor: lambert(tex.flagstone(), { color: 0xb0a8a0 }),
+    floor: floorMat(tex.flagstone(), { color: 0xb0a8a0 }),
     marble: lambert(tex.marble(0)),
-    cobble: lambert(tex.cobble(), { color: 0x8a8480 }),
+    cobble: floorMat(tex.cobble(), { color: 0x8a8480 }),
     ballast: lambert(tex.cobble(), { color: 0x4a4440 }),
     wood: lambert(tex.wood(), { color: 0x8a7060 }),
     rail: lambert(null, { color: 0x6a6460 }),
@@ -495,6 +495,7 @@ function buildMetro() {
   tunnel(STATION_X[STATION_X.length - 1] + HALL, STATION_X[STATION_X.length - 1] + HALL + 30);
   root.add(mergedMesh(tun, M.darkD), mergedMesh(tunVault, M.darkD));
 
+  let crossingCastle = null;
   // ---- The river crossing: out of the tunnel, over the north river, back under ----
   // Line space: tunnel-mouth cliffs and the viaduct. World space: the water, the
   // city on the banks (from the map) and the Crownkeep, all where they really are.
@@ -570,23 +571,26 @@ function buildMetro() {
       count: 700,
       bounds: [cxw - 320, cxw + 320, czw - 260, czw + 160],
       avoid: (x, z, r) => {
-        if (TER.waterNear(x, z, r + 2) || Math.hypot(x - 205, z) < 95 + r) return true;
+        if (TER.waterNear(x, z, r + 2) || Math.hypot(x - CK.x, z - CK.z) < CROWNKEEP_PRECINCT + r) return true;
         const q = nearLine(x, z);
-        return Math.abs(q.d) < 9 + r && q.s > OPEN[0] - 10 && q.s < OPEN[1] + 10;
+        if (Math.abs(q.d) < 9 + r && q.s > OPEN[0] - 10 && q.s < OPEN[1] + 10) return true;
+        // Station halls rise above street level: keep houses off their vaults.
+        return Math.abs(q.d) < 22 + r && STATION_X.some((sx) => Math.abs(q.s - sx) < HALL + 18 + r);
       },
     }).map((l) => ({ ...l, y: 0 }));
     const town = createChunkedTown({ lots, root: world, cell: 250, near: 0, far: 700, litChance: 0.4 });
     town.update(cxw, czw);
-    const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(55, 89, 12, 12, 1), 6), M.cobble);
-    hill.position.set(205, 6, 0);
+    const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(CK.r, CK.r + CK.slope, CK.top, 12, 1), 6), M.cobble);
+    hill.position.set(CK.x, CK.top / 2, CK.z);
     world.add(hill);
     const keep = new THREE.Group();
-    const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, 12);
-    castle.group.position.set(0, -12, 0);
+    const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, CK.top);
+    crossingCastle = castle;
+    castle.group.position.set(0, -CK.top, 0);
     keep.add(castle.group);
-    keep.position.set(205, 12, 0);
+    keep.position.set(CK.x, CK.top, CK.z);
     keep.rotation.y = -Math.PI / 2;
-    keep.scale.setScalar(1.45);
+    keep.scale.setScalar(CK.scale);
     world.add(keep);
     animated.push(...castle.animated);
   }
@@ -652,7 +656,13 @@ function buildMetro() {
   };
 
   let hint = 0;
+  let outK = 0; // how much the camera is out under the sky (day/night applies there)
   return {
+    outdoor: () => outK,
+    // The Crownkeep's fires burn only at night (judged by the clock, not by where you stand).
+    setTime({ glowK }) {
+      crossingCastle?.setNight(glowK);
+    },
     root: world,
     ground: -100, // underground: no implicit floor at street level
     sky: buildSky({ moonDir: new THREE.Vector3(0.5, 0.35, -0.8).normalize(), moonSize: 30, horizon: 0x0a0a12 }),
@@ -696,6 +706,7 @@ function buildMetro() {
         const cx = Math.abs(q.d) < 60 ? q.s : -999;
         const out = cx > OPEN[0] && cx < OPEN[1] ? 1 : cx > OPEN[0] - 40 && cx < OPEN[1] + 40 ? 0.4 : 0;
         ctx.scene.fog.density = 0.024 - 0.019 * out;
+        outK += (out - outK) * Math.min(1, dt * 2);
       }
       for (const a of animated) a.update(dt, t);
       const c = ctx?.controller;

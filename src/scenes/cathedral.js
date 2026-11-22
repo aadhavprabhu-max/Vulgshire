@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archPoints, archHole, shadowy, box, flickerTorches, mergedMesh, boxGeo, lancetGeo, mulberry } from './kit.js';
+import { lambert, archPoints, archHole, shadowy, box, flickerTorches, mergedMesh, boxGeo, lancetGeo, mulberry, floorMat } from './kit.js';
 
 // Inside the Great Cathedral (reference 04-cathedral-interior.png): the view from
 // the west gallery down a tall gothic nave, past rows of pews, to a rose window
@@ -25,7 +25,7 @@ function mats() {
     vault: lambert(tex.darkStone(), { color: 0x8c8498, side: THREE.DoubleSide }),
     rib: lambert(tex.column(), { color: 0x9a92a4 }),
     column: lambert(tex.column(), { color: 0xa49cac }),
-    floor: lambert(tex.tileFloor()),
+    floor: floorMat(tex.tileFloor()),
     pew: lambert(tex.wood(), { color: 0xffe2c8 }),
     cloth: lambert(null, { color: 0x8a8090 }),
     bronze: lambert(tex.statue(), { color: 0xb07050, flatShading: true }),
