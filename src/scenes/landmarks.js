@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, shadowy, box, spire, mergedMesh, boxGeo, merlonGeos, lancetGeo, cross } from './kit.js';
+import { lambert, shadowy, box, spire, mergedMesh, boxGeo, merlonGeos, lancetGeo, cross, floorMat, LAYER } from './kit.js';
 
 // Hero landmarks of the North Shore. Each builder returns
 // { group, colliders, footprint: [x0, x1, z0, z1], flames, portals }.
@@ -12,7 +12,7 @@ function mats() {
     dark: lambert(tex.darkStone()),
     slate: lambert(tex.slate()),
     copper: lambert(tex.slate(), { color: 0x6a9a84 }),
-    paving: lambert(tex.flagstone(), { color: 0xc8c0b8 }),
+    paving: floorMat(tex.flagstone(), { color: 0xc8c0b8 }, 2),
     wood: lambert(tex.wood(), { color: 0x9a8070 }),
     iron: lambert(null, { color: 0x1e1c1c }),
     gold: lambert(null, { color: 0xb08a40 }),
@@ -202,7 +202,7 @@ export function buildStation({ x, z }) {
   // The plaza in front: paving, lantern posts, benches and a warm glow at the doors.
   const plaza = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(56, 26), 14), M.paving);
   plaza.rotation.x = -Math.PI / 2;
-  plaza.position.set(0, 0.03, fz + 18);
+  plaza.position.set(0, LAYER.plaza, fz + 18);
   g.add(plaza);
   for (let k = -2; k <= 2; k++) {
     lanternPost(M, g, flames, k * 10, fz + 9);
@@ -339,7 +339,7 @@ export function buildCathedralExterior({ x, z }) {
   const plaza = new THREE.Mesh(new THREE.CircleGeometry(34, 28), M.paving);
   scaleUV(plaza.geometry, 17);
   plaza.rotation.x = -Math.PI / 2;
-  plaza.position.set(0, 0.03, sqz);
+  plaza.position.set(0, LAYER.plaza, sqz);
   g.add(plaza);
   const fx = -10;
   const fzz = sqz + 6;

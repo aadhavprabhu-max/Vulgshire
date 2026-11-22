@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archPoints, archHole, mergedMesh, boxGeo, lancetGeo, flickerTorches, buildSky, mulberry } from './kit.js';
+import { lambert, archPoints, archHole, mergedMesh, boxGeo, lancetGeo, flickerTorches, buildSky, mulberry, floorMat } from './kit.js';
 import { createChunkedTown } from './chunks.js';
 import { scatterLots } from './town.js';
 import { createMapTerrain } from './mapterrain.js';
@@ -44,9 +44,9 @@ function mats() {
     dark: lambert(tex.darkStone()),
     darkD: lambert(tex.darkStone(), { color: 0x8a8890, side: THREE.DoubleSide }),
     green: lambert(tex.darkStone(), { color: 0x6a8a74, side: THREE.DoubleSide }),
-    floor: lambert(tex.flagstone(), { color: 0xb0a8a0 }),
+    floor: floorMat(tex.flagstone(), { color: 0xb0a8a0 }),
     marble: lambert(tex.marble(0)),
-    cobble: lambert(tex.cobble(), { color: 0x8a8480 }),
+    cobble: floorMat(tex.cobble(), { color: 0x8a8480 }),
     ballast: lambert(tex.cobble(), { color: 0x4a4440 }),
     wood: lambert(tex.wood(), { color: 0x8a7060 }),
     rail: lambert(null, { color: 0x6a6460 }),

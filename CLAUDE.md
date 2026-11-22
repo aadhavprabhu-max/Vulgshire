@@ -67,6 +67,8 @@ A dark fantasy medieval game styled like an early-2000s 3D game. The setting is 
 
 - Lights: a navy hemisphere light, a cold directional moonlight with a hard 1024 px `BasicShadowMap`, and warm point lights for the lantern and wall torches.
 - Surfaces under the walkway roof use darker "baked" materials (`stoneShade`, `floorShade`) because the hemisphere light can't be occluded. This keeps the arches reading as dark openings, like in the reference.
+- **Floors** (`floorMat()` in `kit.js`): mip-mapped floor textures (`floorTex()`: nearest magnification, nearest-picked mips, so floors stay chunky up close but don't sparkle far away), and no vertex snap. Stacked ground surfaces sit on `LAYER` heights (ground 0, streets 0.04, squares 0.07, plazas 0.08) with polygon offsets, so they never z-fight. Walls and everything else keep unfiltered textures with no mipmaps.
+- Camera near/far is 0.2 / 800. Press **P** (or `?stats=1`) for FPS, triangles and draw calls.
 - Glowing flowers are unlit `MeshBasicMaterial` crossed quads (instanced).
 - Glowing things (lit windows, potions, stained glass, flames) use unlit `MeshBasicMaterial`. Real point lights are kept few: the bridge lights only every other post torch.
 - Big skylines (town, castle) are merged into a few meshes. The Crownkeep is built at map scale and then scaled up by 1.45 around the hill top so it dominates the view.

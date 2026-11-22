@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { tex, worldBoxUV, scaleUV } from '../retro/textures.js';
+import { tex, worldBoxUV, scaleUV, floorTex } from '../retro/textures.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Shared building blocks for all scenes: gothic arches, boxes with world-scale
@@ -7,6 +7,24 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export function lambert(map, opts = {}) {
   return new THREE.MeshLambertMaterial({ map, ...opts });
+}
+
+// Heights of stacked ground surfaces, so no two ever share a plane (z-fighting).
+export const LAYER = { ground: 0, street: 0.04, square: 0.07, plaza: 0.08 };
+
+/**
+ * A walkable floor material: mip-mapped floor texture (no distant sparkle) and no
+ * vertex snap. `layer` > 0 adds a polygon offset so paving always wins over ground.
+ */
+export function floorMat(map, opts = {}, layer = 0) {
+  const m = new THREE.MeshLambertMaterial({ map: map ? floorTex(map) : null, ...opts });
+  m.userData.noJitter = true;
+  if (layer > 0) {
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -layer;
+    m.polygonOffsetUnits = -2 * layer;
+  }
+  return m;
 }
 
 // Points along a pointed (two-centred) arch from (x0, ys) over the apex to (x1, ys).

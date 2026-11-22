@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV, worldBoxUV } from '../retro/textures.js';
-import { lambert, archPoints, archHole, shadowy, box, mergedMesh, boxGeo, lancetGeo, flickerTorches, mulberry } from './kit.js';
+import { lambert, archPoints, archHole, shadowy, box, mergedMesh, boxGeo, lancetGeo, flickerTorches, mulberry, floorMat } from './kit.js';
 import { createGuard } from '../characters/guard.js';
 import { createPerson, PALETTES } from '../characters/people.js';
 import { createCrowd, faceToward } from '../characters/crowd.js';
@@ -29,7 +29,7 @@ function mats() {
     marble: lambert(tex.marble(0)),
     marbleGrey: lambert(tex.marble(1)),
     marbleRed: lambert(tex.marble(2)),
-    floor: lambert(tex.marbleFloor()),
+    floor: floorMat(tex.marbleFloor()),
     medallion: new THREE.MeshLambertMaterial({ map: tex.medallion(), transparent: true, alphaTest: 0.5 }),
     vault: lambert(tex.hallStone(), { color: 0x8a8898, side: THREE.DoubleSide }),
     rib: lambert(tex.column(), { color: 0x9e98a8 }),

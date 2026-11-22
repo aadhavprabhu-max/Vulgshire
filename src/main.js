@@ -18,7 +18,7 @@ const retro = new RetroRenderer(canvas, settings);
 const hud = createHud(document.getElementById('hud'), settings.shot);
 const stats = createStats(retro);
 if (new URLSearchParams(location.search).get('stats') === '1') stats.toggle(true);
-const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.2, 800);
 
 const scene = new THREE.Scene();
 const fog = new THREE.FogExp2(0x000000, 0.02);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archPoints, archHole, shadowy, box, gableRoof, spire, cross, lancet, rotY, makeTorch, crossedSprites, mulberry, buildSky, flickerTorches } from './kit.js';
+import { lambert, archPoints, archHole, shadowy, box, gableRoof, spire, cross, lancet, rotY, makeTorch, crossedSprites, mulberry, buildSky, flickerTorches, floorMat } from './kit.js';
 
 // The moonlit cloister (reference: reference/screenshots/01-moonlit-cloister.png).
 // A square garden ringed by a pointed-arch arcade and a covered walkway,
@@ -30,10 +30,10 @@ function mats() {
     // "Baked" shade for surfaces under the walkway roof: hemisphere light
     // can't be occluded, so we darken these materials like a lightmap would.
     stoneShade: lambert(tex.stoneWall(), { color: 0x5a5a6c }),
-    floorShade: lambert(tex.flagstone(), { color: 0x66667a }),
+    floorShade: floorMat(tex.flagstone(), { color: 0x66667a }),
     darkStone: lambert(tex.darkStone()),
     column: lambert(tex.column()),
-    floor: lambert(tex.flagstone()),
+    floor: floorMat(tex.flagstone()),
     slate: lambert(tex.slate(), { side: THREE.DoubleSide }),
     wood: lambert(tex.wood(), { color: 0x777788 }),
     grass: lambert(tex.grass()),

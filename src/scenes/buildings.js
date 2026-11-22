@@ -591,6 +591,7 @@ export class BuildingSet {
     const blockers = [];
     for (const [key, geos] of Object.entries(this.buckets)) {
       const mesh = mergedMesh(geos, M[key], { cast: false });
+      mesh.name = key;
       group.add(mesh);
       if (['plaster', 'timber', 'timber2', 'timber3', 'stone'].includes(key)) blockers.push(mesh);
     }

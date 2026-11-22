@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, shadowy, box, spire, cross, buildSky, flickerTorches, mergedMesh, boxGeo, quadGeo, mulberry } from './kit.js';
+import { lambert, shadowy, box, spire, cross, buildSky, flickerTorches, mergedMesh, boxGeo, quadGeo, mulberry, floorMat } from './kit.js';
 import { buildTown } from './town.js';
 import { createAlchemist } from '../characters/alchemist.js';
 
@@ -31,7 +31,7 @@ function mats() {
     pane: new THREE.MeshBasicMaterial({ map: tex.lanternPane() }),
     banner: new THREE.MeshLambertMaterial({ map: tex.banner(), alphaTest: 0.5, side: THREE.DoubleSide }),
     water: new THREE.MeshLambertMaterial({ map: tex.water(), color: 0x9aa4c0 }),
-    ground: lambert(tex.cobble(), { color: 0x55525a }),
+    ground: floorMat(tex.cobble(), { color: 0x55525a }),
   };
 }
 

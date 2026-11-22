@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { tex, scaleUV } from '../retro/textures.js';
-import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos } from './kit.js';
+import { lambert, archHole, shadowy, box, spire, buildSky, flickerTorches, mergedMesh, boxGeo, merlonGeos, floorMat, LAYER } from './kit.js';
 import { street, lotsAlongStreets, streetGeometry, scatterLots } from './town.js';
 import { createMapTerrain } from './mapterrain.js';
 import { createChunkedTown } from './chunks.js';
@@ -39,7 +39,8 @@ function mats() {
     stone: lambert(tex.stoneWall()),
     castle: lambert(tex.castleStone()),
     cobble: lambert(tex.cobble()),
-    paving: lambert(tex.flagstone(), { color: 0xc8c0b8 }),
+    ground: floorMat(tex.cobble()),
+    paving: floorMat(tex.flagstone(), { color: 0xc8c0b8 }, 1),
     slate: lambert(tex.slate()),
     rock: lambert(tex.darkStone(), { color: 0x6a6070 }),
     wood: lambert(tex.wood()),
@@ -142,8 +143,9 @@ function buildZone() {
       skip: (x, z) => Math.abs(z) < 6.5 && Math.abs(x) < 33,
       parapetWhere: (x, z) => T.inRegion(x, z),
       waterAt: slot,
+      noGround: (x, z) => Math.abs(x) < 27 && Math.abs(z) < 3.5, // the bridge deck has its own surface
     });
-    const ground = new THREE.Mesh(terr.ground, M.cobble);
+    const ground = new THREE.Mesh(terr.ground, M.ground);
     ground.receiveShadow = true;
     root.add(ground);
     root.add(new THREE.Mesh(terr.quays, M.stone));
@@ -169,7 +171,7 @@ function buildZone() {
   // ---- The bridge (map px ~643..687 at y 167) -------------------------------
   const BX = 27; // half length incl. abutments
   const HALF = 3.5;
-  root.add(box(2 * BX, 1.2, 2 * HALF, M.cobble, 0, -0.6, 0));
+  root.add(box(2 * BX, 1.2, 2 * HALF, M.ground, 0, -0.58, 0)); // deck top at +2 cm, ground cut out beneath
   {
     const s = new THREE.Shape();
     s.moveTo(-BX, -9);
@@ -363,7 +365,7 @@ function buildZone() {
       k.add(new THREE.Mesh(rf, SM.roof));
       const hole = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 3.4), SM.dark);
       hole.rotation.x = -Math.PI / 2;
-      hole.position.set(0, 0.03, 0);
+      hole.position.set(0, 0.12, 0); // above every paving layer
       k.add(hole);
       const glow = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), SM.glow);
       glow.position.set(0, 0.6, -1.95);
@@ -445,12 +447,16 @@ function buildZone() {
     const svc = createService({ stops: [OPEN[0] - 70, OPEN[1] + 70], dwell: 6 });
     return { train, svc };
   })();
-  const paving = streets.map((s) => streetGeometry(s, 0.015));
+  // Paving: streets and squares on their own layers, all with world-space UVs so
+  // overlaps (street crossings, squares) look identical wherever they meet.
+  const paving = streets.map((s) => streetGeometry(s, LAYER.street));
   for (const q of squares) {
     const g = new THREE.CircleGeometry(q.r, 16);
     g.rotateX(-Math.PI / 2);
-    g.translate(q.x, 0.016, q.z);
-    paving.push(scaleUV(g, q.r));
+    g.translate(q.x, LAYER.square, q.z);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) g.attributes.uv.setXY(i, p.getX(i) / 2, p.getZ(i) / 2);
+    paving.push(g);
   }
   root.add(mergedMesh(paving, M.paving));
 
@@ -651,7 +657,7 @@ function buildZone() {
       return T.toPx(p.x, p.z);
     },
     lanternIntensity: 3,
-    debug: { viaduct },
+    debug: { viaduct, town, skyline },
     env: {
       fog: { color: 0x170d20, density: 0.0052 },
       hemi: { sky: 0x6a4a9a, ground: 0x4a2814, intensity: 1.8 },

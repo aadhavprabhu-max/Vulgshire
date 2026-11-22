@@ -25,6 +25,12 @@ function onBeforeCompile(shader) {
 
 export function patchMaterial(material) {
   if (material.userData.retroPatched || material.isShaderMaterial) return;
+  // Floors stay out of the vertex snap: snapping big, flat, grazing-angle ground
+  // makes it swim and fight with the paving on top. Walls keep their wobble.
+  if (material.userData.noJitter) {
+    material.userData.retroPatched = true;
+    return;
+  }
   material.onBeforeCompile = onBeforeCompile;
   material.userData.retroPatched = true;
 }

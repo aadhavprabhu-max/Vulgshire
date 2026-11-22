@@ -104,3 +104,17 @@ So most of the visible flicker when walking is **texture shimmer**, which the ve
    - Up close they stay exactly as chunky as now; far away they stop sparkling.
    - The alternative is to leave the textures alone and only fix the geometry.
 5. **Jitter:** leave the ground out of the vertex snap (walls keep wobbling) so floors don't swim when jitter is on.
+
+## Phase 1: floor flicker (done)
+- **Layers:** `LAYER` in `kit.js`: ground 0, streets +4 cm, squares +7 cm, plazas +8 cm.
+  - Paving materials also get a `polygonOffset` that grows with the layer.
+  - Squares now use the same world-space UVs as streets, so where they overlap they look identical.
+- **The bridge:** the ground is cut out under the deck (`buildGround({ noGround })`), and the deck top sits at +2 cm.
+- **Ground mesh:** row strips are capped at 64 map pixels (about 90 m), so there are no more kilometre-long slivers.
+- **`floorMat()`:** floors in every scene use mip-mapped floor textures (`floorTex()`, nearest-mip, so they're still chunky up close) and stay out of the vertex snap (`userData.noJitter`). Walls keep their wobble and their unfiltered textures.
+- **Camera:** near 0.1 → 0.2, far 1000 → 800. The moon sits at about 310 m and the skylines at most 640 m, so nothing visible is lost.
+- **Results:**
+  - The stacked-surface probe went from **3,928 overlapping samples to 7**. The 7 left are props touching, like an awning on a post.
+  - The textured "nudge the camera" test now only flags one-pixel texel edges, which is the intended nearest-neighbour look.
+  - Distant cobbles and flagstones no longer sparkle.
+- **Cost:** +~19k triangles (the shorter ground strips), same draw calls. All 6 scenes load without errors.
