@@ -4,11 +4,12 @@ import { lambert, archPoints, archHole, mergedMesh, boxGeo, lancetGeo, flickerTo
 import { createChunkedTown } from './chunks.js';
 import { scatterLots } from './town.js';
 import { createMapTerrain } from './mapterrain.js';
-import { createMetroLine, bendGroup, bendBox, bendAABB, toMapPx } from './metroline.js';
+import { createMetroLine, bendGroup, bendBox, bendAABB, toMapPx, railY, PROFILE } from './metroline.js';
+import { createService } from './trainservice.js';
 import { LOCATIONS } from '../data/world.js';
 import { buildCastle } from './castle.js';
 import { clockFace } from './landmarks.js';
-import { createTrain, TRAIN_L, CAR_W, FLOOR } from './train.js';
+import { createTrain, CAR_W, FLOOR, CAR_L, DOORS, DOOR_W, constrainInCar } from './train.js';
 import { createPerson, PALETTES } from '../characters/people.js';
 import { createCrowd, faceToward } from '../characters/crowd.js';
 import { createGuard } from '../characters/guard.js';
@@ -30,7 +31,9 @@ const HALL = 28; // half platform length (the train is about 44 m)
 const PZ0 = -9; // platform back
 const PZ1 = -2.2; // platform edge
 const FAR = 3.2; // far wall
-const BRIDGE = { x0: 140, x1: 196, waterY: -6, top: 14 }; // where the line crosses the north river (line metres)
+// Heights follow the shared profile (streets 0, water -4, tunnels -10).
+const BRIDGE = { x0: PROFILE.bridge[0], x1: PROFILE.bridge[1], waterY: -4, top: 0 };
+const OPEN = PROFILE.open; // tunnel mouths
 
 function mats() {
   return {
@@ -118,7 +121,7 @@ function vaultGeo(x0, x1, z0, z1, spring, k) {
 }
 
 // Wall in the (z, y) plane at world x, with arched holes given in world z.
-function crossWall(x, thick, zA, zB, yTop, holes, mat) {
+export function crossWall(x, thick, zA, zB, yTop, holes, mat) {
   const s = new THREE.Shape();
   // Shape x = -world z (so it maps back after rotateY(PI/2)).
   s.moveTo(-zB, -8);
@@ -192,7 +195,7 @@ function buildMetro() {
   const animated = [];
   const portals = [];
   const entries = {};
-  const crowd = createCrowd({ root: world, colliders, floors });
+  const crowd = createCrowd({ root: world, colliders, floors, ground: -100 });
   const pendingNPC = [];
   const addNPC = (person, opts) => pendingNPC.push([person, opts]);
   const pr = mulberry(808);
@@ -222,13 +225,14 @@ function buildMetro() {
   for (let x = x0; x < x1; x += 100) {
     const xa = x;
     const xb = Math.min(x + 100, x1);
-    if (xb <= BRIDGE.x0 || xa >= BRIDGE.x1) bed.push(boxGeo(xb - xa, 0.1, 6, (xa + xb) / 2, -0.05, 0, 0, 2));
+    if (xb <= BRIDGE.x0 || xa >= BRIDGE.x1) bed.push(boxGeo(xb - xa, 0.1, 7, (xa + xb) / 2, -0.05, 0, 0, 2));
     else {
-      if (xa < BRIDGE.x0) bed.push(boxGeo(BRIDGE.x0 - xa, 0.1, 6, (xa + BRIDGE.x0) / 2, -0.05, 0, 0, 2));
-      if (xb > BRIDGE.x1) bed.push(boxGeo(xb - BRIDGE.x1, 0.1, 6, (xb + BRIDGE.x1) / 2, -0.05, 0, 0, 2));
+      if (xa < BRIDGE.x0) bed.push(boxGeo(BRIDGE.x0 - xa, 0.1, 7, (xa + BRIDGE.x0) / 2, -0.05, 0, 0, 2));
+      if (xb > BRIDGE.x1) bed.push(boxGeo(xb - BRIDGE.x1, 0.1, 7, (xb + BRIDGE.x1) / 2, -0.05, 0, 0, 2));
     }
   }
   root.add(mergedMesh(bed, M.ballast));
+  floors.push({ minX: x0, maxX: x1, minZ: -3.2, maxZ: 3.2, y: 0.02 }); // the track bed (and the bridge deck)
 
   // ---- Stations ---------------------------------------------------------------------
   STATIONS.forEach((st, i) => {
@@ -241,8 +245,8 @@ function buildMetro() {
     root.add(mergedMesh([boxGeo(2 * HALL, 1, PZ1 - PZ0, X, 0.5, (PZ0 + PZ1) / 2, 0, 2)], M[S.floor]));
     root.add(mergedMesh([boxGeo(2 * HALL, 0.08, 0.35, X, 1.02, PZ1 - 0.17, 0, 1)], M.coping));
     floors.push({ minX: xa, maxX: xb, minZ: PZ0, maxZ: PZ1, y: 1 });
-    for (let ex = xa; ex < xb - 0.01; ex += 2.8) {
-      const c = { minX: ex, maxX: Math.min(xb, ex + 2.8), minZ: PZ1 - 0.05, maxZ: PZ1 + 0.3, y0: 0.5, station: i };
+    for (let ex = xa; ex < xb - 0.01; ex += 0.25) {
+      const c = { minX: ex, maxX: Math.min(xb, ex + 0.25), minZ: PZ1 - 0.05, maxZ: PZ1 + 0.3, y0: 0.5, station: i };
       edge.push(c);
       colliders.push(c);
     }
@@ -483,8 +487,8 @@ function buildMetro() {
     const a = STATION_X[i] + HALL;
     const b = STATION_X[i + 1] - HALL;
     if (i === 0) {
-      tunnel(a, BRIDGE.x0);
-      tunnel(BRIDGE.x1, b);
+      tunnel(a, OPEN[0]);
+      tunnel(OPEN[1], b);
     } else tunnel(a, b);
   }
   tunnel(-HALL - 30, -HALL);
@@ -497,73 +501,62 @@ function buildMetro() {
   const ZONE = LOCATIONS.zones.find((z) => z.id === 'north-river-crossing');
   const TER = createMapTerrain(ZONE.originPx);
   const nearLine = (x, z, hint) => ROUTE.toLine(x, z, hint);
-  const cut = (x, z) => {
-    // The river channel the viaduct crosses (the map's road bridge there is ignored).
-    const q = nearLine(x, z, (BRIDGE.x0 + BRIDGE.x1) / 2);
-    return q.s > BRIDGE.x0 - 2 && q.s < BRIDGE.x1 + 2 && Math.abs(q.d) < 34;
+  // The open-air part of the line (cutting + viaduct) is a slot in the ground.
+  const inOpen = (x, z) => {
+    const q = nearLine(x, z, (OPEN[0] + OPEN[1]) / 2);
+    return q.s > OPEN[0] - 1 && q.s < OPEN[1] + 1 && Math.abs(q.d) < 3.6;
   };
   {
-    const { x0: bx0, x1: bx1, waterY, top } = BRIDGE;
-    const water = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(1800, 1400), 220), M.water);
-    water.rotation.x = -Math.PI / 2;
-    water.position.set(250, waterY, 150);
-    world.add(water);
-    // The banks: land from the map raised to street level, quay walls down to the water.
+    const { x0: bx0, x1: bx1, waterY } = BRIDGE;
     const [mx, my] = toMapPx(...ROUTE.toWorld((bx0 + bx1) / 2, 0));
-    const terr = TER.buildGround({
-      px0: Math.round(mx - 170),
-      px1: Math.round(mx + 170),
-      py0: Math.round(my - 150),
-      py1: Math.round(my + 120),
-      waterY: waterY - top - 1,
-      waterAt: cut,
-      noQuay: (x, z) => {
-        const q = nearLine(x, z, (bx0 + bx1) / 2);
-        return Math.abs(q.d) < 22 && (Math.abs(q.s - bx0) < 8 || Math.abs(q.s - bx1) < 8);
-      },
-    });
-    terr.ground.translate(0, top, 0);
-    terr.quays.translate(0, top, 0);
-    const ground = new THREE.Mesh(terr.ground, M.cobble);
-    world.add(ground, new THREE.Mesh(terr.quays, M.stone));
-    // Tunnel mouths: cliff faces across the line at both ends of the viaduct.
-    for (const cx of [bx0, bx1]) {
-      root.add(crossWall(cx, 2, -22, 22, top, [{ z0: -2.9, z1: 2.9, bottom: -0.2, spring: 3.4 }], M.stone));
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.35, 4, 12, Math.PI), M.coping);
+    const win = { px0: Math.round(mx - 170), px1: Math.round(mx + 170), py0: Math.round(my - 150), py1: Math.round(my + 120) };
+    // Water only where the map has water (never inside tunnels or stations).
+    const underground = (x, z) => {
+      const q = nearLine(x, z);
+      return Math.abs(q.d) < 12 && (q.s < OPEN[0] || q.s > OPEN[1]);
+    };
+    world.add(new THREE.Mesh(TER.buildWater({ ...win, y: waterY, skip: underground }), M.water));
+    // Banks at street level with quay walls; the slot for the line has retaining walls.
+    const terr = TER.buildGround({ ...win, waterY: waterY - 1.2, waterAt: inOpen });
+    world.add(new THREE.Mesh(terr.ground, M.cobble), new THREE.Mesh(terr.quays, M.stone));
+    // Tunnel mouths in the ends of the cutting.
+    for (const cx of OPEN) {
+      root.add(crossWall(cx, 1.6, -9, 9, -railY(cx) + 0.2, [{ z0: -2.9, z1: 2.9, bottom: -0.2, spring: 3.4 }], M.stone));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.05, 0.3, 4, 12, Math.PI), M.coping);
       ring.rotation.y = Math.PI / 2;
-      ring.position.set(cx + (cx === bx0 ? 1.05 : -1.05), 3.4, 0);
+      ring.position.set(cx + (cx === OPEN[0] ? 0.85 : -0.85), 3.4, 0);
       root.add(ring);
     }
-    // The viaduct: deck, arches into the river, parapets with lanterns.
+    // The viaduct: deck and low arches over the river, parapets with lanterns.
     const len = bx1 - bx0;
     const deck = new THREE.Shape();
     deck.moveTo(bx0, waterY - 1);
     deck.lineTo(bx1, waterY - 1);
-    deck.lineTo(bx1, 0);
-    deck.lineTo(bx0, 0);
+    deck.lineTo(bx1, -0.1);
+    deck.lineTo(bx0, -0.1);
     deck.lineTo(bx0, waterY - 1);
-    const spans = 4;
+    const spans = 7;
     for (let k = 0; k < spans; k++) {
-      const a = bx0 + (len * k) / spans + 1.2;
-      const b = bx0 + (len * (k + 1)) / spans - 1.2;
-      deck.holes.push(archHole(a, b, waterY - 0.9, -2.6, 0.5));
+      const a = bx0 + (len * k) / spans + 1.1;
+      const b = bx0 + (len * (k + 1)) / spans - 1.1;
+      deck.holes.push(archHole(a, b, waterY - 0.9, waterY - 0.5, 0.5));
     }
-    const dg = scaleUV(new THREE.ExtrudeGeometry(deck, { depth: 6.4, bevelEnabled: false }), 0.5);
-    dg.translate(0, 0, -3.2);
+    const dg = scaleUV(new THREE.ExtrudeGeometry(deck, { depth: 6.6, bevelEnabled: false }), 0.5);
+    dg.translate(0, 0, -3.3);
     root.add(new THREE.Mesh(dg, M.stone));
     const par = [];
     for (const sz of [-1, 1]) {
-      par.push(boxGeo(len, 1.1, 0.4, (bx0 + bx1) / 2, 0.55, sz * 3, 0, 1));
-      for (let k = 0; k <= spans; k++) par.push(boxGeo(0.8, 1.6, 0.8, bx0 + (len * k) / spans, 0.8, sz * 3, 0, 1));
+      par.push(boxGeo(len, 1.1, 0.4, (bx0 + bx1) / 2, 0.55, sz * 3.3, 0, 1));
+      for (let k = 0; k <= spans; k++) par.push(boxGeo(0.8, 1.6, 0.8, bx0 + (len * k) / spans, 0.8, sz * 3.3, 0, 1));
     }
     root.add(mergedMesh(par, M.coping));
-    for (let k = 1; k < spans; k++) {
+    for (let k = 1; k < spans; k += 2) {
       for (const sz of [-1, 1]) {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.4, 5), M.iron);
-        post.position.set(bx0 + (len * k) / spans, 2.2, sz * 3);
+        post.position.set(bx0 + (len * k) / spans, 2.2, sz * 3.3);
         root.add(post);
         const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.42, 0.3), M.lit);
-        l.position.set(bx0 + (len * k) / spans, 3.6, sz * 3);
+        l.position.set(bx0 + (len * k) / spans, 3.6, sz * 3.3);
         root.add(l);
       }
       const pl = new THREE.PointLight(0xffa050, 10, 20, 1.6);
@@ -577,25 +570,27 @@ function buildMetro() {
       count: 700,
       bounds: [cxw - 320, cxw + 320, czw - 260, czw + 160],
       avoid: (x, z, r) => {
-        if (TER.waterNear(x, z, r + 2) || cut(x, z) || Math.hypot(x - 205, z) < 95 + r) return true;
+        if (TER.waterNear(x, z, r + 2) || Math.hypot(x - 205, z) < 95 + r) return true;
         const q = nearLine(x, z);
-        return Math.abs(q.d) < 16 + r && q.s > -60 && q.s < 1060;
+        return Math.abs(q.d) < 9 + r && q.s > OPEN[0] - 10 && q.s < OPEN[1] + 10;
       },
-    }).map((l) => ({ ...l, y: top }));
+    }).map((l) => ({ ...l, y: 0 }));
     const town = createChunkedTown({ lots, root: world, cell: 250, near: 0, far: 700, litChance: 0.4 });
     town.update(cxw, czw);
+    const hill = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(55, 89, 12, 12, 1), 6), M.cobble);
+    hill.position.set(205, 6, 0);
+    world.add(hill);
     const keep = new THREE.Group();
-    const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, top);
-    castle.group.position.set(0, -top, 0);
+    const castle = buildCastle({ castle: M.castle, slate: M.slate, lit: M.lit }, 0, 12);
+    castle.group.position.set(0, -12, 0);
     keep.add(castle.group);
-    keep.position.set(205, top, 0);
+    keep.position.set(205, 12, 0);
     keep.rotation.y = -Math.PI / 2;
     keep.scale.setScalar(1.45);
     world.add(keep);
     animated.push(...castle.animated);
   }
 
-  // ---- The train ----------------------------------------------------------------------
   // ---- Bend the line onto the real curve; convert physics to world space --------
   const bent = bendGroup(ROUTE, root);
   world.add(bent.group);
@@ -618,7 +613,7 @@ function buildMetro() {
   for (const key of Object.keys(entries)) {
     const e = entries[key];
     const [x, z] = ROUTE.toWorld(e.pos.x, e.pos.z);
-    entries[key] = { pos: new THREE.Vector3(x, e.pos.y, z), yaw: ROUTE.yawToWorld(e.pos.x, e.yaw), pitch: e.pitch };
+    entries[key] = { pos: new THREE.Vector3(x, e.pos.y + railY(e.pos.x), z), yaw: ROUTE.yawToWorld(e.pos.x, e.yaw), pitch: e.pitch };
   }
   for (const [person, o] of pendingNPC) {
     const opts = { ...o };
@@ -630,65 +625,36 @@ function buildMetro() {
     crowd.add(person, opts);
   }
 
-  // ---- The train (each car follows the curve) ------------------------------------
+  for (const c of edge) c.y0base = c.y0;
+
+  // ---- The train: a 1D service (distance + speed); every car is derived from it ----
   const train = createTrain();
   world.add(train.group);
   cameraBlockers.push(...train.blockers);
-  const carFloors = train.cars.map(() => ({ cx: 0, cz: 0, hx: 6.9, hz: 1.3, rot: 0, y: FLOOR }));
-  floors.push(...carFloors);
-  const T = { x: STATION_X[1] + 20, v: 0, dir: -1, target: 0, mode: 'move', t: 0, doors: 0 };
-  const ACC = 1.6;
-  const VMAX = 16;
-  let riding = false;
+  const svc = createService({ stops: STATION_X });
+  const SV = svc.state;
+  const placeTrain = () => {
+    train.place(ROUTE.frame, railY, SV.distance, { dir: SV.dir, travelled: SV.travelled });
+    train.setDoors(SV.doors);
+  };
+  placeTrain();
+  // Threshold floors bridging the platform gap at each open doorway.
+  const thresholds = Array.from({ length: 6 }, () => ({ cx: 0, cz: 0, hx: 0.01, hz: 0.01, rot: 0, y: -999 }));
+  floors.push(...thresholds);
+  let ride = null; // { k: car index, local: Vector3, yaw }
   let wasFirst = false;
-
-  function nextTarget() {
-    if (T.target === STATION_X.length - 1) T.dir = -1;
-    if (T.target === 0) T.dir = 1;
-    T.target += T.dir;
-    T.mode = 'move';
-  }
-  function updateTrain(dt) {
-    const x0 = T.x;
-    if (T.mode === 'move') {
-      const goal = STATION_X[T.target];
-      const rem = goal - T.x;
-      const dist = Math.abs(rem);
-      const brake = (T.v * T.v) / (2 * ACC);
-      if (dist <= brake + 0.05) T.v = Math.max(0.6, T.v - ACC * dt);
-      else T.v = Math.min(VMAX, T.v + ACC * dt);
-      const step = Math.min(dist, T.v * dt);
-      T.x += Math.sign(rem) * step;
-      if (dist - step < 0.02) {
-        T.x = goal;
-        T.v = 0;
-        T.mode = 'dwell';
-        T.t = 0;
-      }
-    } else {
-      T.t += dt;
-      const open = T.t < 1.2 ? T.t / 1.2 : T.t < 9.2 ? 1 : T.t < 10.4 ? 1 - (T.t - 9.2) / 1.2 : 0;
-      T.doors = open;
-      train.setDoors(open);
-      if (T.t > 10.8) nextTarget();
-    }
-    if (T.mode === 'move') {
-      T.doors = 0;
-      train.setDoors(0);
-    }
-    train.placeOnCurve(ROUTE.frame, T.x);
-    train.cars.forEach((c, k) => {
-      const f = ROUTE.frame(T.x + c.offset);
-      // The floor reaches out over the platform gap while the doors are open.
-      const [fx, fz] = ROUTE.toWorld(T.x + c.offset, T.doors > 0.5 ? -0.55 : 0);
-      Object.assign(carFloors[k], { cx: fx, cz: fz, rot: f.rot, hz: T.doors > 0.5 ? 1.85 : 1.3 });
-    });
-    return T.x - x0;
-  }
+  const inv = new THREE.Matrix4();
+  const v3 = new THREE.Vector3();
+  const carYaw = (k) => train.cars[k].group.rotation.y;
+  const toLocal = (k, p) => {
+    inv.copy(train.cars[k].group.matrixWorld).invert();
+    return p.clone().applyMatrix4(inv);
+  };
 
   let hint = 0;
   return {
     root: world,
+    ground: -100, // underground: no implicit floor at street level
     sky: buildSky({ moonDir: new THREE.Vector3(0.5, 0.35, -0.8).normalize(), moonSize: 30, horizon: 0x0a0a12 }),
     colliders,
     cameraBlockers,
@@ -707,19 +673,15 @@ function buildMetro() {
     // Arriving from the street: send the train toward this station so the wait is short.
     onEnter(entry) {
       const i = STATIONS.findIndex((s) => 'st-' + s.id === (entry || 'st-triflumen'));
-      if (i < 0) return;
-      const from = i < STATION_X.length - 1 ? i + 1 : i - 1;
-      T.x = STATION_X[i] + (STATION_X[from] - STATION_X[i]) * 0.55;
-      T.target = i;
-      T.dir = Math.sign(STATION_X[i] - STATION_X[from]);
-      T.mode = 'move';
-      T.v = 10;
+      if (i >= 0) svc.approach(i);
+      ride = null;
+      placeTrain();
     },
     // Where the player is on the city map (interpolated between stations).
     mapPos(p) {
       return toMapPx(p.x, p.z);
     },
-    debug: { T, edge, ROUTE },
+    debug: { T: SV, svc, edge, ROUTE, get ride() { return ride; } },
     stationAt(x, z) {
       const q = ROUTE.toLine(x, z ?? 0);
       const i = STATION_X.findIndex((sx) => Math.abs(sx - q.s) < HALL);
@@ -732,39 +694,67 @@ function buildMetro() {
         const q = ROUTE.toLine(ctx.camera.position.x, ctx.camera.position.z, hint);
         hint = q.s;
         const cx = Math.abs(q.d) < 60 ? q.s : -999;
-        const out = cx > BRIDGE.x0 - 8 && cx < BRIDGE.x1 + 8 ? 1 : cx > BRIDGE.x0 - 40 && cx < BRIDGE.x1 + 40 ? 0.4 : 0;
+        const out = cx > OPEN[0] && cx < OPEN[1] ? 1 : cx > OPEN[0] - 40 && cx < OPEN[1] + 40 ? 0.4 : 0;
         ctx.scene.fog.density = 0.024 - 0.019 * out;
       }
       for (const a of animated) a.update(dt, t);
-      const dx = updateTrain(dt);
-      // Open the platform edge where the doors are.
-      const docked = T.mode === 'dwell' && T.doors > 0.5;
-      for (const c of edge) c.y0 = docked && c.s0 >= T.x - TRAIN_L / 2 && c.s1 <= T.x + TRAIN_L / 2 ? 999 : 0.5;
       const c = ctx?.controller;
+      // 1) A passenger is held in their car's own space (read before the train moves).
+      if (ride && c) ride.local = toLocal(ride.k, c.pos);
+      // 2) Simulate the train (fixed sub-steps), then place every car from its distance.
+      svc.update(dt);
+      placeTrain();
+      // 3) Platform edges open only at the doorways of a train standing with doors open.
+      const doorsOpen = svc.canBoard;
+      const gaps = [];
+      if (doorsOpen) for (const car of train.cars) for (const d of DOORS) gaps.push(SV.distance + car.offset + d);
+      // Only chunks wholly inside a doorway open, so you can never slip past a door's edge.
+      for (const e of edge) e.y0 = gaps.some((g) => e.s0 > g - DOOR_W / 2 - 0.02 && e.s1 < g + DOOR_W / 2 + 0.02) ? 999 : e.y0base;
+      thresholds.forEach((th, k) => {
+        const g = gaps[k];
+        if (g === undefined) return Object.assign(th, { y: -999 });
+        const [x, z] = ROUTE.toWorld(g, -1.85);
+        Object.assign(th, { cx: x, cz: z, hx: DOOR_W / 2, hz: 0.5, rot: ROUTE.frame(g).rot, y: railY(g) + FLOOR });
+      });
       if (c) {
-        const p = c.pos;
-        // Work in line space: s along the track, d across it.
-        const q = ROUTE.toLine(p.x, p.z, T.x);
-        const inside = Math.abs(q.s - (T.x - dx)) < TRAIN_L / 2 - 0.3 && q.d > -1.6 && q.d < CAR_W / 2 && p.y > 0.6;
-        if (inside) {
-          const s0 = q.s;
-          let s1 = s0 + dx;
-          let d1 = q.d;
-          if (T.doors < 0.5) d1 = Math.max(-CAR_W / 2 + 0.3, Math.min(CAR_W / 2 - 0.3, d1));
-          s1 = Math.max(T.x - TRAIN_L / 2 + 0.5, Math.min(T.x + TRAIN_L / 2 - 0.5, s1));
-          const [nx, nz] = ROUTE.toWorld(s1, d1);
-          p.x = nx;
-          p.z = nz;
-          // Turn with the train on curves.
-          const turn = ROUTE.frame(s1).rot - ROUTE.frame(s0).rot;
-          c.yaw += Math.atan2(Math.sin(turn), Math.cos(turn));
-          c.facing = c.yaw;
-          if (!riding) {
+        // 4) Board through an open platform-side doorway.
+        if (!ride && doorsOpen) {
+          for (let k = 0; k < 3 && !ride; k++) {
+            const l = toLocal(k, c.pos);
+            const atDoor = DOORS.some((d) => Math.abs(l.x - d) < DOOR_W / 2 - 0.15);
+            if (atDoor && l.z > -CAR_W / 2 - 0.2 && l.z < -CAR_W / 2 + 0.4 && Math.abs(l.y - FLOOR) < 0.8) ride = { k, local: l, yaw: carYaw(k) };
+          }
+          if (ride) {
+            c.carried = true;
             wasFirst = c.firstPerson;
             if (!wasFirst) c.setFirstPerson(true);
           }
-        } else if (riding && !wasFirst) c.setFirstPerson(false);
-        riding = inside;
+        }
+        if (ride) {
+          // Walk between cars through the gangways.
+          const l = ride.local;
+          if (Math.abs(l.z) < 0.45 && ((l.x > CAR_L / 2 - 0.4 && ride.k < 2) || (l.x < -CAR_L / 2 + 0.4 && ride.k > 0))) {
+            const k2 = ride.k + (l.x > 0 ? 1 : -1);
+            v3.set(l.x > 0 ? CAR_L / 2 + 0.45 : -CAR_L / 2 - 0.45, FLOOR, 0).applyMatrix4(train.cars[ride.k].group.matrixWorld);
+            ride = { k: k2, local: toLocal(k2, v3), yaw: carYaw(k2) };
+          }
+          const r = constrainInCar(ride.local, doorsOpen);
+          if (r.alight) {
+            v3.set(r.x, FLOOR, -CAR_W / 2 - 0.85).applyMatrix4(train.cars[ride.k].group.matrixWorld);
+            c.pos.copy(v3);
+            ride = null;
+            c.carried = false;
+            if (!wasFirst) c.setFirstPerson(false);
+          } else {
+            // 5) Put the passenger back in the (moved) car and turn the view with it.
+            v3.set(r.x, FLOOR, r.z).applyMatrix4(train.cars[ride.k].group.matrixWorld);
+            c.pos.copy(v3);
+            const turn = carYaw(ride.k) - ride.yaw;
+            c.yaw += Math.atan2(Math.sin(turn), Math.cos(turn));
+            c.facing = c.yaw;
+            ride.yaw = carYaw(ride.k);
+          }
+        }
       }
       crowd.update(dt, t, ctx?.player);
     },
